@@ -124,8 +124,24 @@ python acs4.py server link
     parser.destroy()
 
 
-def mint(server, distributor, password, debug):
-    get_distributor_info(server, password, debug, distributor=distributor)
+# password in this case is the shared secret.
+def mint(server, name, resource, distributor, password, debug):
+    orderid = ACS4-770186598 # placeholder for random/tbd value
+    # get_distributor_info(server, password, debug, distributor=distributor)
+    'http://' + server + '?'
+    urlargs = 'action=enterorder'
+    urlargs += '&ordersource=' + urllib.urlencode(name)
+    urlargs += '&orderid=' + urllib.urlencode(orderid)
+    urlargs += '&resid=' + urllib.urlencode(resource)
+    # ...
+    urlargs += '&gblver=4'
+
+    mac = hmac.new(password, '', hashlib.sha1)
+    mac.update(urlargs)
+    auth = base64.b64encode(mac.digest())
+
+    return 'http://' + server + '?' + urlargs + '&auth=' + auth
+    
 
 def get_distributor_info(server, password, debug, distributor=None):
     request_args = { 'distributor':distributor }
@@ -134,6 +150,7 @@ def get_distributor_info(server, password, debug, distributor=None):
     root_el = tree.getroot()
     if root_el.tag == AdeptNSBracketed + 'error':
         raise Acs4Exception(root_el.get('data'))
+    # parse and return info
     
     
 
