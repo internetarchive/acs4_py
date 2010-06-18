@@ -2,6 +2,10 @@
 
 """
 Copyright(c)2010 Internet Archive. Software license AGPL version 3.
+
+Entry points - call from command line, or see:
+queryresourceitems, upload, request and mint.
+
 """
 
 
@@ -21,42 +25,15 @@ import hashlib
 # debug()
 
 AdeptNS = 'http://ns.adobe.com/adept'
+AdeptNSBracketed = '{' + AdeptNS + '}'
 default_dist = 'urn:uuid:00000000-0000-0000-0000-000000000001'
 
 # Set this to a string to remove variable elements from the generated requests,
 # for debugging hmac / serialization issues.
 nonce = None
 
-"""
-python ../acs4.py --password='' --debug upload ia331529.us.archive.org ../logofcowboynarra00adamuoft.epub
-python ../acs4.py --password='' --debug queryresourceitems ia331529.us.archive.org urn:uuid:00000000-0000-0000-0000-000000000001
-
-request --resource=(some book) --distributor=(iadistrutor) --distributionType=buy $SERVER DistributionRights create
-
-
-
-needed: get book info (uuid (x distributor?))
-book available?
-
-(do we get notification on book return?)
-(something that polls?)
-
-? what latency ballpark for basic book queries?
-
-mint a url - (for a particular ADE user)
-
-? how many copies available for a given book?  How to spec more?
-
-possible to keep socket open?
-
-
-
-book info
-mint a url (from book uuid)
-
-
-"""
-
+class Acs4Exception(Exception):
+    pass
 
 def main(argv):
     import optparse
@@ -73,6 +50,7 @@ def main(argv):
 python acs4.py server queryresourceitems # requires --distributor=defaultdist
 python acs4.py server upload filename
 python acs4.py server request api request_type
+python acs4.py server link
 """)
 
 
@@ -89,7 +67,8 @@ python acs4.py server request api request_type
                          'distributionType',
                          'available',
                          'returnable',
-                         'resourceItem'
+                         'resourceItem',
+                         'notifyURL'
                          ]
     for name in request_arg_names:
         parser.add_option('--' + name,
@@ -106,7 +85,7 @@ python acs4.py server request api request_type
     server = args[0]
     action = args[1].lower()
 
-    actions = ['queryresourceitems', 'upload', 'request']
+    actions = ['queryresourceitems', 'upload', 'request', 'mint']
     if not action in actions:
         parser.error('action arg should be one of ' + ', '.join(actions))
         
@@ -123,7 +102,7 @@ python acs4.py server request api request_type
         if len(args) != 4:
             parser.error('For "request" action, please supply server, "request", web_api, request_type - where web_api is e.g. DistributionRights, and request_type is one of ' + joined)
         api = args[2]
-        request_type = args[3]
+        request_type = args[3].lower()
         if not request_type in request_types:
             parser.error('Request type should be one of ' + joined)
         request_args = {}
@@ -137,20 +116,40 @@ python acs4.py server request api request_type
         request_args['available'] = opts.available
         request_args['returnable'] = opts.returnable
         request_args['resourceItem'] = opts.resourceItem
-
+        request_args['notifyURL'] = opts.notifyURL
         request(server, api, request_type, request_args, opts.password, opts.debug)
+
+    elif action == 'mint':
+        mint(server, opts.distributor, opts.password, opts.debug)
     parser.destroy()
+
+
+def mint(server, distributor, password, debug):
+    get_distributor_info(server, password, debug, distributor=distributor)
+
+def get_distributor_info(server, password, debug, distributor=None):
+    request_args = { 'distributor':distributor }
+    reply = request(server, 'Distributor', 'get', request_args, password, debug)
+    tree = etree.parse(StringIO(reply))
+    root_el = tree.getroot()
+    if root_el.tag == AdeptNSBracketed + 'error':
+        raise Acs4Exception(root_el.get('data'))
+    
+    
 
 
 def request(server, api, action, request_args, password, debug):
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
         '<request action="' + action + '" auth="builtin" xmlns="http://ns.adobe.com/adept"/>')
 
-    print xml
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
     add_envelope(root_el, password, debug=debug)
     api_el_name = api[0].lower() + api[1:]
+
+    # Several requests require a subelement name that's different from
+    # the API; these are special-cased here.  It's not clear if
+    # there's any system to them.
     if api_el_name == 'resourceItem':
         api_el_name += 'Info'
     if api_el_name == 'distributor':
@@ -175,7 +174,9 @@ def request(server, api, action, request_args, password, debug):
         print request
 
     response = post(request, server, '/admin/Manage' + api[0].upper() + api[1:]) # api here
-    print response
+    if debug:
+        print response
+    return response
 
 
 def upload(server, filename, password, debug=None):
@@ -303,8 +304,6 @@ def serialize_el(el, consumer):
         consume_str("") # TODO element namespace
         consume_str(attname)
         consume_str(el.attrib[attname])
-
-    # TODO serialize attributes
 
     consumer.update(END_ATTRIBUTES)
 
