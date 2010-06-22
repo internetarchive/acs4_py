@@ -16,17 +16,21 @@ import math
 import httplib
 import urllib
 from lxml import etree
+from lxml import objectify
 from StringIO import StringIO
 import base64
 import hmac
 import hashlib
+import random
+import time
+import datetime
 
-# from  pydbgr.api import debug
-# debug()
+# from pydbgr.api import debug
 
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
-default_dist = 'urn:uuid:00000000-0000-0000-0000-000000000001'
+default_distributor = 'urn:uuid:00000000-0000-0000-0000-000000000001'
+defaultport=8080
 
 # Set this to a string to remove variable elements from the generated requests,
 # for debugging hmac / serialization issues.
@@ -53,13 +57,16 @@ python acs4.py server request api request_type
 python acs4.py server link
 """)
 
-
     parser.add_option('-p', '--password',
                       action='store',
-                      help='ACS password')
+                      help='ACS4 password')
     parser.add_option('-d', '--debug',
                       action='store_true',
                       help='Print debugging output')
+    parser.add_option('--port',
+                      default=defaultport,
+                      action='store',
+                      help='Server port to use (default 8080)')
 
     # also repeat these below, near 'dynamic'
     request_arg_names = ['distributor',
@@ -68,7 +75,8 @@ python acs4.py server link
                          'available',
                          'returnable',
                          'resourceItem',
-                         'notifyURL'
+                         'notifyURL',
+                         'user'
                          ]
     for name in request_arg_names:
         parser.add_option('--' + name,
@@ -90,12 +98,16 @@ python acs4.py server link
         parser.error('action arg should be one of ' + ', '.join(actions))
         
     if action == 'queryresourceitems':
-        queryresourceitems(server, opts.distributor, opts.password, opts.debug)
+        queryresourceitems(server, opts.password,
+                           distributor=opts.distributor,
+                           port=opts.port,
+                           debug=opts.debug)
     elif action == 'upload':
         if len(args) != 3:
             parser.error('For "upload" action, please supply 3 args: server, "upload", filename')
         filename = args[2]
-        upload(server, filename, opts.password, opts.debug)
+        upload(server, open(filename), opts.password,
+               debug=opts.debug, port=opts.port)
     elif action == 'request':
         request_types = ['get', 'count', 'create', 'delete', 'update']
         joined = ', '.join(request_types)
@@ -117,47 +129,76 @@ python acs4.py server link
         request_args['returnable'] = opts.returnable
         request_args['resourceItem'] = opts.resourceItem
         request_args['notifyURL'] = opts.notifyURL
-        request(server, api, request_type, request_args, opts.password, opts.debug)
+        request_args['user'] = opts.user
+        request(server, api, request_type, request_args, opts.password,
+                port=opts.port, debug=opts.debug)
 
     elif action == 'mint':
-        mint(server, opts.distributor, opts.password, opts.debug)
+        distinfo = get_distributor_info(server, opts.password, opts.distributor,
+                                        port=opts.port, debug=opts.debug)
+        secret = distinfo['sharedSecret']
+        print mint(server, secret, opts.resourceItem, 'enterloan', 'sample store',
+                   port=opts.port, debug=opts.debug)
     parser.destroy()
 
 
-# password in this case is the shared secret.
-def mint(server, name, resource, distributor, password, debug):
-    orderid = ACS4-770186598 # placeholder for random/tbd value
-    # get_distributor_info(server, password, debug, distributor=distributor)
-    'http://' + server + '?'
-    urlargs = 'action=enterorder'
-    urlargs += '&ordersource=' + urllib.urlencode(name)
-    urlargs += '&orderid=' + urllib.urlencode(orderid)
-    urlargs += '&resid=' + urllib.urlencode(resource)
-    # ...
-    urlargs += '&gblver=4'
+def mint(server, secret, resource, action, ordersource, rights=None, orderid=None, port=defaultport, debug=False):
+    """Create an acs4 download link.
 
-    mac = hmac.new(password, '', hashlib.sha1)
-    mac.update(urlargs)
-    auth = base64.b64encode(mac.digest())
+    'secret' should be the base-64 encoded secret key string for the
+    resource distributor.  This can be obtained by calling
+    get_distributor_info and using sharedSecret from the result.
 
-    return 'http://' + server + '?' + urlargs + '&auth=' + auth
+    Arguments:
+    server
+    secret
+    resource - the acs4 resource uuid
+    ordersource - 'My Store Name'
+
+    Keyword arguments:
+    rights - tbd.  Used to further restrict rights on downloaded resource
+    orderid - an opaque token, 'orderid' in generated link, notifyurl posts
+
+    """
+
+    if not action in ['enterloan', 'enterorder']:
+        raise Acs4Exception('mint action argument should be enterloan or enterorder')
+    
+    if orderid is None:
+        orderid = 'ACS4-' + str(random.randint(0, 1000000))
+    # TODO: handle rights
+    argsobj ={
+        'action': action,
+        'ordersource': ordersource,
+        'orderid': orderid,
+        'resid': resource,
+        'gbauthdate': make_expiration(0),
+        'dateval': str(int(time.time())),
+        'gblver': 4
+        }
+    urlargs = urllib.urlencode(argsobj)
+    mac = hmac.new(base64.b64decode(secret), urlargs, hashlib.sha1)
+    auth = mac.hexdigest()
+    portstr = (':' + str(port)) if port is not 80 else ''
+    return ('http://' + server + portstr + '/fulfillment/URLLink.acsm?'
+            + urlargs + '&auth=' + auth)
     
 
-def get_distributor_info(server, password, debug, distributor=None):
+def get_distributor_info(server, password, distributor, port=defaultport, debug=False):
     request_args = { 'distributor':distributor }
-    reply = request(server, 'Distributor', 'get', request_args, password, debug)
-    tree = etree.parse(StringIO(reply))
-    root_el = tree.getroot()
-    if root_el.tag == AdeptNSBracketed + 'error':
-        raise Acs4Exception(root_el.get('data'))
-    # parse and return info
-    
-    
+    reply = request(server, 'Distributor', 'get', request_args, password, debug=debug)
+    obj = xml_to_py(reply)
+    try:
+        result = obj['distributorData']
+    except KeyError:
+        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
+    return result
 
 
-def request(server, api, action, request_args, password, debug):
+def request(server, api, action, request_args, password, debug=False, port=defaultport):
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
-        '<request action="' + action + '" auth="builtin" xmlns="http://ns.adobe.com/adept"/>')
+        '<request action="' + action
+           + '" auth="builtin" xmlns="http://ns.adobe.com/adept"/>')
 
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
@@ -190,20 +231,25 @@ def request(server, api, action, request_args, password, debug):
     if debug:
         print request
 
-    response = post(request, server, '/admin/Manage' + api[0].upper() + api[1:]) # api here
+    response = post(request, server, port,
+                    '/admin/Manage' + api[0].upper() + api[1:])
     if debug:
         print response
     return response
 
 
-def upload(server, filename, password, debug=None):
+def upload(server, filehandle, password, port=defaultport, debug=False):
+    """Upload a file to ACS4.
+
+    """
+
     xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <package xmlns="http://ns.adobe.com/adept"/>
 """
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
 
-    etree.SubElement(root_el, 'data').text = base64.encodestring(open(filename).read())
+    etree.SubElement(root_el, 'data').text = base64.encodestring(filehandle.read())
 
     add_envelope(root_el, password, debug=debug)
     etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el, debug)
@@ -211,20 +257,23 @@ def upload(server, filename, password, debug=None):
     request = etree.tostring(tree,
                              pretty_print=True,
                              encoding='utf-8')
-
     if debug:
         print request
-    response = post(request, server, '/packaging/Package')
-    print response
+    response = post(request, server, port, '/packaging/Package')
+    if debug:
+        print response
+    obj = xml_to_py(response)
+    return obj
 
 
-def queryresourceitems(server, distributor, password, debug=None):
+def queryresourceitems(server, password, distributor=None, port=defaultport, debug=False):
     xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <request xmlns="http://ns.adobe.com/adept"/>
 """
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
-    etree.SubElement(root_el, 'distributor').text = distributor;
+    if distributor is not None:
+        etree.SubElement(root_el, 'distributor').text = distributor;
     add_envelope(root_el, password, debug=debug)
     etree.SubElement(root_el, 'QueryResourceItems')
     etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el, debug)
@@ -233,13 +282,15 @@ def queryresourceitems(server, distributor, password, debug=None):
                              encoding='utf-8')
     if debug:
         print request
-    response = post(request, server, '/admin/QueryResourceItems')
-    print response
+    response = post(request, server, port, '/admin/QueryResourceItems')
+    if debug:
+        print response
+    return response
 
 
-def post(request, server, api_path):
+def post(request, server, port, api_path):
     headers = { 'Content-Type': 'application/vnd.adobe.adept+xml' }
-    conn = httplib.HTTPConnection(server, 8080)
+    conn = httplib.HTTPConnection(server, port)
     conn.request('POST', api_path, request, headers)
     return conn.getresponse().read()
 
@@ -250,7 +301,6 @@ def add_envelope(el, password, debug=None):
 
 
 def make_expiration(seconds):
-    import datetime
     t = datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)
     return t.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
@@ -320,6 +370,7 @@ def serialize_el(el, consumer):
         consumer.update(ATTRIBUTE)
         consume_str("") # TODO element namespace
         consume_str(attname)
+
         consume_str(el.attrib[attname])
 
     consumer.update(END_ATTRIBUTES)
@@ -364,6 +415,25 @@ class debug_consumer:
         self.s += '\n'
     def dump(self):
         return self.s
+
+
+def xml_to_py(xml_string):
+    o = objectify.fromstring(xml_string)
+    return objectified_to_py(o)
+
+def objectified_to_py(o):
+    if isinstance(o, objectify.IntElement):
+        return int(o)
+    if isinstance(o, objectify.NumberElement) or isinstance(o, objectify.FloatElement):
+        return float(o)
+    if isinstance(o, objectify.ObjectifiedDataElement):
+        return str(o)
+    if hasattr(o, '__dict__'):
+        result = o.__dict__
+        for key, value in result.iteritems():
+            result[key] = objectified_to_py(value)
+        return result
+    return o
 
 
 if __name__ == '__main__':
