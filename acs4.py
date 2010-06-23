@@ -25,7 +25,7 @@ import random
 import time
 import datetime
 
-# from pydbgr.api import debug
+from pydbgr.api import debug
 
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
@@ -422,9 +422,42 @@ class debug_consumer:
         return self.s
 
 
+def perms_to_xml(el, perms):
+    """Convert a python dict specifying permissions to equivalent xml,
+    and append it to an element.
+
+    UTC dates and datetimes are ok as 'until' values.
+
+    Call multiple times to add additional permissions.
+
+    """
+    # TODO this doesn't work!
+    perms_el = el.find('.//' + AdeptNSBracketed + 'permissions')
+    if perms_el is None:
+        perms_el = etree.SubElement(el, 'permissions')
+    
+    for ptype, pspecs in perms.iteritems():
+        ptype_el = etree.SubElement(perms_el, ptype)
+        for spec, specval in pspecs.iteritems():
+            if spec == 'count':
+                count_el = etree.SubElement(ptype_el, 'count')
+                for countspec, countspecval in specval.iteritems():
+                    count_el.set(countspec, str(countspecval))
+            elif spec == 'device':
+                etree.SubElement(ptype_el, 'device')
+            else:
+                if isinstance(specval, datetime.date):
+                    as_str = specval.strftime("%Y-%m-%dT%H:%M:%S-00:00")
+                else:
+                    as_str = str(specval)
+                etree.SubElement(ptype_el, spec).text = str(as_str)
+    return perms_el
+
+
 def xml_to_py(xml_string):
     o = objectify.fromstring(xml_string)
     return objectified_to_py(o)
+
 
 def objectified_to_py(o):
     if isinstance(o, objectify.IntElement):
