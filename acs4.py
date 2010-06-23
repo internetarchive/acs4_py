@@ -151,12 +151,15 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
 
     Arguments:
     server
-    secret
+    secret - distributor_info['sharedSecret']
     resource - the acs4 resource uuid
-    ordersource - 'My Store Name'
+    ordersource - 'My Store Name', or distributor_info['name']
 
     Keyword arguments:
-    rights - tbd.  Used to further restrict rights on downloaded resource
+
+    rights - Used to further restrict rights on downloaded resource.
+        See Content Server Technical Reference, section 3.4 for
+        details on this string.
     orderid - an opaque token, 'orderid' in generated link, notifyurl posts
 
     """
@@ -176,6 +179,8 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
         'dateval': str(int(time.time())),
         'gblver': 4
         }
+    if rights is not None:
+        argsobj['rights'] = rights
     urlargs = urllib.urlencode(argsobj)
     mac = hmac.new(base64.b64decode(secret), urlargs, hashlib.sha1)
     auth = mac.hexdigest()
