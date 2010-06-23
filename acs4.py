@@ -54,7 +54,7 @@ def main(argv):
 python acs4.py server queryresourceitems # requires --distributor=defaultdist
 python acs4.py server upload filename
 python acs4.py server request api request_type
-python acs4.py server link
+python acs4.py server mint
 """)
 
     parser.add_option('-p', '--password',
@@ -153,6 +153,7 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
     server
     secret - distributor_info['sharedSecret']
     resource - the acs4 resource uuid
+    action - 'enterloan' or 'enterorder'
     ordersource - 'My Store Name', or distributor_info['name']
 
     Keyword arguments:
