@@ -60,7 +60,7 @@ def main(argv):
 
 python acs4.py server mint --distributor='uuid' --resource='uuid'
 python acs4.py server queryresourceitems # requires --distributor=defaultdist
-python acs4.py server upload filename
+python acs4.py server upload [filename] (or --datapath=/server/path/book.epub)
 python acs4.py server request api request_type
         api is: (id is:)
                 DistributionRights      (distributor + resource)
@@ -84,6 +84,9 @@ python acs4.py server request api request_type
     parser.add_option('--permissions',
                       action='store',
                       help='xml file of ACS4 permissions - for upload and request')
+    parser.add_option('--datapath',
+                      action='store',
+                      help='server data path to use with upload')
     parser.add_option('-d', '--debug',
                       action='store_true',
                       help='Print debugging output')
@@ -134,14 +137,22 @@ python acs4.py server request api request_type
         parser.error('action arg should be one of ' + ', '.join(actions))
         
     if action == 'queryresourceitems':
-        queryresourceitems(server, opts.password,
-                           distributor=opts.distributor,
-                           port=opts.port)
+        print queryresourceitems(server, opts.password,
+                                 distributor=opts.distributor,
+                                 port=opts.port)
     elif action == 'upload':
-        if len(args) != 3:
-            parser.error('For "upload" action, please supply 3 args: server, "upload", filename')
-        filename = args[2]
-        print upload(server, open(filename), opts.password,
+        fh = None
+        if len(args) == 3:
+            if opts.datapath is not None:
+                parser.error('--datapath (path to remote file) and filename both supplied.')
+            fh = open(args[2])
+        elif len(args) == 2:
+            if opts.datapath is None:
+                parser.error('please supply filename or --datapath argument')
+        else:
+            parser.error('Wrong number of args supplied to upload action')
+        print upload(server, fh, opts.password,
+                     datapath=opts.datapath,
                      permissions=opts.permissions,
                      port=opts.port)
     elif action == 'request':
@@ -289,7 +300,8 @@ def request(server, api, action, request_args, password,
     return response
 
 
-def upload(server, filehandle, password, port=defaultport, permissions=None):
+def upload(server, filehandle, password,
+           datapath=None, port=defaultport, permissions=None):
     """Upload a file to ACS4.
 
     Arguments:
@@ -314,7 +326,10 @@ def upload(server, filehandle, password, port=defaultport, permissions=None):
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
 
-    etree.SubElement(root_el, 'data').text = base64.encodestring(filehandle.read())
+    if filehandle is not None:
+        etree.SubElement(root_el, 'data').text = base64.encodestring(filehandle.read())
+    else:
+        etree.SubElement(root_el, 'dataPath').text = datapath
 
     if permissions is not None:
         perms_el = read_perms_xml(permissions)
