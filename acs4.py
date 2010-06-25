@@ -347,7 +347,7 @@ def queryresourceitems(server, password, distributor=None, port=defaultport, deb
         etree.SubElement(root_el, 'distributor').text = distributor;
     add_envelope(root_el, password, debug=debug)
     etree.SubElement(root_el, 'QueryResourceItems')
-    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el, debug)
+    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
     request = etree.tostring(tree,
                              pretty_print=True,
                              encoding='utf-8')
