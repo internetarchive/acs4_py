@@ -24,6 +24,8 @@ import hashlib
 import random
 import time
 import datetime
+import uuid
+
 
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
@@ -171,9 +173,8 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
         raise Acs4Exception('mint action argument should be enterloan or enterorder')
     
     if orderid is None:
-        orderid = 'ACS4-' + str(random.randint(0, 1000000))
-    # TODO: handle rights
-    argsobj ={
+        orderid = uuid.uuid4().urn
+    argsobj = {
         'action': action,
         'ordersource': ordersource,
         'orderid': orderid,
