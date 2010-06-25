@@ -30,7 +30,13 @@ import uuid
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
 default_distributor = 'urn:uuid:00000000-0000-0000-0000-000000000001'
-defaultport=8080
+defaultport = 8080
+debug = False
+dry_run = False
+
+# Show information about request serialization, for debugging
+# hmac issues
+show_serialization = False
 
 # Set this to a string to remove variable elements from the generated requests,
 # for debugging hmac / serialization issues.
@@ -42,8 +48,8 @@ class Acs4Exception(Exception):
 def main(argv):
     import optparse
 
-    # borrowed from http://stackoverflow.com/questions/1857346/python-optparse-how-to-include-additional-info-in-usage-output
     class MyParser(optparse.OptionParser):
+        """ allows non-word-wrapped help epilog """
         def format_epilog(self, formatter):
             return self.epilog
 
@@ -51,18 +57,39 @@ def main(argv):
                       version='%prog 0.1',
                       description='Interact with ACS.',
                       epilog="""
+
+python acs4.py server mint --distributor='uuid' --resource='uuid'
 python acs4.py server queryresourceitems # requires --distributor=defaultdist
 python acs4.py server upload filename
 python acs4.py server request api request_type
-python acs4.py server mint
+        api is: (id is:)
+                DistributionRights      (distributor + resource)
+                Distributor             (distributor)
+                Fulfillment             (fulfillment)
+                FulfillmentItem         (fulfillment)
+                License                 (user + resource)
+                ResourceItem            (resource + item)
+                ResourceKey             (resource)
+                UserPublic              (user)
+
+        request_type is: 'get count create delete update'
+
+        USE WITH CARE, this can break your acs4 install!
+        
 """)
 
     parser.add_option('-p', '--password',
                       action='store',
                       help='ACS4 password')
+    parser.add_option('--permissions',
+                      action='store',
+                      help='xml file of ACS4 permissions - for upload and request')
     parser.add_option('-d', '--debug',
                       action='store_true',
                       help='Print debugging output')
+    parser.add_option('--dry_run',
+                      action='store_true',
+                      help='Don\'t post to server')
     parser.add_option('--port',
                       default=defaultport,
                       action='store',
@@ -76,7 +103,7 @@ python acs4.py server mint
                          'returnable',
                          'resourceItem',
                          'notifyURL',
-                         'user'
+                         'user',
                          ]
     for name in request_arg_names:
         parser.add_option('--' + name,
@@ -84,6 +111,15 @@ python acs4.py server mint
                                help=name + ' argument for request')
 
     opts, args = parser.parse_args(argv)
+
+    if opts.permissions:
+        opts.permissions = open(opts.permissions).read()
+    if opts.debug:
+        global debug
+        debug = True
+    if opts.dry_run:
+        global dry_run
+        dry_run = True
 
     if not opts.password:
         parser.error('We think a password arg might be required')
@@ -100,14 +136,14 @@ python acs4.py server mint
     if action == 'queryresourceitems':
         queryresourceitems(server, opts.password,
                            distributor=opts.distributor,
-                           port=opts.port,
-                           debug=opts.debug)
+                           port=opts.port)
     elif action == 'upload':
         if len(args) != 3:
             parser.error('For "upload" action, please supply 3 args: server, "upload", filename')
         filename = args[2]
-        upload(server, open(filename), opts.password,
-               debug=opts.debug, port=opts.port)
+        print upload(server, open(filename), opts.password,
+                     permissions=opts.permissions,
+                     port=opts.port)
     elif action == 'request':
         request_types = ['get', 'count', 'create', 'delete', 'update']
         joined = ', '.join(request_types)
@@ -131,18 +167,20 @@ python acs4.py server mint
         request_args['notifyURL'] = opts.notifyURL
         request_args['user'] = opts.user
         request(server, api, request_type, request_args, opts.password,
-                port=opts.port, debug=opts.debug)
+                permissions=opts.permissions,
+                port=opts.port)
 
     elif action == 'mint':
         distinfo = get_distributor_info(server, opts.password, opts.distributor,
-                                        port=opts.port, debug=opts.debug)
+                                        port=opts.port)
         secret = distinfo['sharedSecret']
-        print mint(server, secret, opts.resourceItem, 'enterloan', 'sample store',
-                   port=opts.port, debug=opts.debug)
+        name = distinfo['name']
+        print mint(server, secret, opts.resourceItem, 'enterloan', name,
+                   port=opts.port)
     parser.destroy()
 
 
-def mint(server, secret, resource, action, ordersource, rights=None, orderid=None, port=defaultport, debug=False):
+def mint(server, secret, resource, action, ordersource, rights=None, orderid=None, port=defaultport):
     """Create an acs4 download link.
 
     'secret' should be the base-64 encoded secret key string for the
@@ -160,7 +198,10 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
 
     rights - Used to further restrict rights on downloaded resource.
         See Content Server Technical Reference, section 3.4 for
-        details on this string.
+        details on this string.  To expire the book in one day, and
+        allow printing 2 pages per hour, specify
+        rights='$lrt#86400$$prn#2#3600$'  Yep.  Note that this can't
+        extend the rights already granted in ACS4.
 
     orderid - an opaque token, 'orderid' in generated link, notifyurl
         posts.  Note that this *must* be unique (within the expiration
@@ -193,9 +234,9 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
             + urlargs + '&auth=' + auth)
     
 
-def get_distributor_info(server, password, distributor, port=defaultport, debug=False):
+def get_distributor_info(server, password, distributor, port=defaultport):
     request_args = { 'distributor':distributor }
-    reply = request(server, 'Distributor', 'get', request_args, password, debug=debug)
+    reply = request(server, 'Distributor', 'get', request_args, password)
     obj = xml_to_py(reply)
     try:
         result = obj['distributorData']
@@ -204,14 +245,15 @@ def get_distributor_info(server, password, distributor, port=defaultport, debug=
     return result
 
 
-def request(server, api, action, request_args, password, debug=False, port=defaultport):
+def request(server, api, action, request_args, password,
+            permissions=None, port=defaultport):
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
         '<request action="' + action
            + '" auth="builtin" xmlns="http://ns.adobe.com/adept"/>')
 
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
-    add_envelope(root_el, password, debug=debug)
+    add_envelope(root_el, password)
     api_el_name = api[0].lower() + api[1:]
 
     # Several requests require a subelement name that's different from
@@ -219,27 +261,27 @@ def request(server, api, action, request_args, password, debug=False, port=defau
     # there's any system to them.
     if api_el_name == 'resourceItem':
         api_el_name += 'Info'
-    if api_el_name == 'distributor':
+    if api_el_name in ('distributor', 'license'
+                       'fulfillment', 'fulfillmentItem'):
         api_el_name += 'Data'
     api_el = etree.SubElement(root_el, api_el_name)
+
+    if permissions is not None:
+        perms_el = read_perms_xml(permissions)
+        api_el.append(perms_el)
 
     for key in request_args.keys():
         if request_args[key]:
             etree.SubElement(api_el, key).text = request_args[key]
 
-    # perms = etree.SubElement(api_el, 'permissions')
-    # disp =  etree.SubElement(perms, 'display')
-    # etree.SubElement(disp, 'duration').text ='181'
-    # etree.SubElement(perms, 'excerpt')
-    # etree.SubElement(perms, 'print')
-
-    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el, debug)
+    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
     request = etree.tostring(tree,
                              pretty_print=True,
                              encoding='utf-8')
     if debug:
         print request
-
+    if dry_run:
+        return None
     response = post(request, server, port,
                     '/admin/Manage' + api[0].upper() + api[1:])
     if debug:
@@ -247,8 +289,22 @@ def request(server, api, action, request_args, password, debug=False, port=defau
     return response
 
 
-def upload(server, filehandle, password, port=defaultport, debug=False):
+def upload(server, filehandle, password, port=defaultport, permissions=None):
     """Upload a file to ACS4.
+
+    Arguments:
+    server
+    filehandle
+    password
+
+    Keyword arguments:
+    port
+
+    permissions - This should be xml describing the item permissions,
+        if any.  The best way to get this is to configure a sample
+        book in the ACS4 admin console UI, then copy it here.  Any
+        valid ACS4 xml fragment that includes a 'permissions' element
+        should work.
 
     """
 
@@ -260,14 +316,20 @@ def upload(server, filehandle, password, port=defaultport, debug=False):
 
     etree.SubElement(root_el, 'data').text = base64.encodestring(filehandle.read())
 
-    add_envelope(root_el, password, debug=debug)
-    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el, debug)
+    if permissions is not None:
+        perms_el = read_perms_xml(permissions)
+        root_el.append(perms_el)
+
+    add_envelope(root_el, password)
+    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
 
     request = etree.tostring(tree,
                              pretty_print=True,
                              encoding='utf-8')
     if debug:
         print request
+    if dry_run:
+        return None
     response = post(request, server, port, '/packaging/Package')
     if debug:
         print response
@@ -291,6 +353,8 @@ def queryresourceitems(server, password, distributor=None, port=defaultport, deb
                              encoding='utf-8')
     if debug:
         print request
+    if dry_run:
+        return None
     response = post(request, server, port, '/admin/QueryResourceItems')
     if debug:
         print response
@@ -318,13 +382,13 @@ def make_nonce():
     return base64.b64encode(os.urandom(20))[:20]
 
 
-def make_hmac(password, el, debug=None):
+def make_hmac(password, el):
     passhasher = hashlib.sha1()
     passhasher.update(password)
     passhash = passhasher.digest()
     mac = hmac.new(passhash, '', hashlib.sha1)
 
-    if debug:
+    if show_serialization:
         logger = debug_consumer()
         serialize_el(el, logger)
         print logger.dump()
@@ -426,37 +490,20 @@ class debug_consumer:
         return self.s
 
 
-def perms_to_xml(el, perms):
-    """Convert a python dict specifying permissions to equivalent xml,
-    and append it to an element.
-
-    UTC dates and datetimes are ok as 'until' values.
-
-    Call multiple times to add additional permissions.
-
-    """
-    # TODO this doesn't work!
-    perms_el = el.find('.//' + AdeptNSBracketed + 'permissions')
+def read_perms_xml(permissions):
+    ncparser = etree.XMLParser(remove_comments=True)
+    perms_arg_el = etree.fromstring(permissions, parser=ncparser)
+    if (perms_arg_el.tag == 'permissions' or
+        perms_arg_el.tag == AdeptNSBracketed + 'permissions'):
+        perms_el = perms_arg_el
+    else:
+        perms_el = perms_arg_el.find('.//' + AdeptNSBracketed + 'permissions')
     if perms_el is None:
-        perms_el = etree.SubElement(el, 'permissions')
-    
-    for ptype, pspecs in perms.iteritems():
-        ptype_el = etree.SubElement(perms_el, ptype)
-        for spec, specval in pspecs.iteritems():
-            if spec == 'count':
-                count_el = etree.SubElement(ptype_el, 'count')
-                for countspec, countspecval in specval.iteritems():
-                    count_el.set(countspec, str(countspecval))
-            elif spec == 'device':
-                etree.SubElement(ptype_el, 'device')
-            else:
-                if isinstance(specval, datetime.date):
-                    as_str = specval.strftime("%Y-%m-%dT%H:%M:%S-00:00")
-                else:
-                    as_str = str(specval)
-                etree.SubElement(ptype_el, spec).text = str(as_str)
+        perms_el = perms_arg_el.find('.//permissions')
+    if perms_el is None:
+        raise Acs4Exception('No permissions element in supplied permissions xml')
     return perms_el
-
+    
 
 def xml_to_py(xml_string):
     o = objectify.fromstring(xml_string)

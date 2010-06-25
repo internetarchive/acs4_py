@@ -1,0 +1,6 @@
+<permissions>
+  <display>
+    <device/>
+    <duration>1209600</duration> <!-- two weeks -->
+  </display>
+</permissions>
