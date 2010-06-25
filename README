@@ -10,6 +10,8 @@ RSRC=resource_uuid
 # upload file
 python acs4.py $SERVER upload sample.epub --password=$PW
 # ... this returns some JSON, which includes the newly assigned resource ID
+# ... or (for large files)
+python acs4.py $SERVER upload --datapath=/server/path/sample.epub --password=$PW
 
 # 'distribute' it, as a loanable, returnable book
 python acs4.py $SERVER request DistributionRights create --password=$PW --distributionType=loan --returnable=true --available=1 --permissions=sample_permissions.xml --resource=$RSRC --distributor=$DIST
