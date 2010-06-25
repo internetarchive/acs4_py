@@ -25,8 +25,6 @@ import random
 import time
 import datetime
 
-from pydbgr.api import debug
-
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
 default_distributor = 'urn:uuid:00000000-0000-0000-0000-000000000001'
