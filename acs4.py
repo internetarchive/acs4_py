@@ -161,7 +161,11 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
     rights - Used to further restrict rights on downloaded resource.
         See Content Server Technical Reference, section 3.4 for
         details on this string.
-    orderid - an opaque token, 'orderid' in generated link, notifyurl posts
+
+    orderid - an opaque token, 'orderid' in generated link, notifyurl
+        posts.  Note that this *must* be unique (within the expiration
+        window) or loan fulfillment will fail.  If not supplied, a
+        random one will be generated.
 
     """
 
