@@ -258,6 +258,39 @@ def get_distributor_info(server, password, distributor, port=defaultport):
 
 def request(server, api, action, request_args, password,
             permissions=None, port=defaultport):
+    """Make a xml-mediated DB request to the ACS4 server.
+
+    Arguments:
+    server
+
+    api - one of: (unique id required to e.g. get a single instance)
+                DistributionRights      (distributor + resource)
+                Distributor             (distributor)
+                Fulfillment             (fulfillment)
+                FulfillmentItem         (fulfillment)
+                License                 (user + resource)
+                ResourceItem            (resource + item)
+                ResourceKey             (resource)
+                UserPublic              (user)
+
+    action - 'get count create delete update'
+
+    request_args - a dict of elements to be added as children of the
+        'api element' (e.g. distributionRights).  Note *all* must be
+        supplied for 'update' action, or the remainder will be nulled.
+
+    Keyword arguments:
+    port
+
+    permissions - This should be xml describing the item permissions,
+        if any.  The best way to get this is to configure a sample
+        book in the ACS4 admin console UI, then copy it here.  Any
+        valid ACS4 xml fragment that includes a 'permissions' element
+        should work.
+
+    USE WITH CARE, this API can break your acs4 install!
+    """
+
     xml = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
         '<request action="' + action
            + '" auth="builtin" xmlns="http://ns.adobe.com/adept"/>')
@@ -311,6 +344,9 @@ def upload(server, filehandle, password,
 
     Keyword arguments:
     port
+
+    datapath - Path ON SERVER to file to be packaged.  When this is supplied,
+        filehandle should be None.
 
     permissions - This should be xml describing the item permissions,
         if any.  The best way to get this is to configure a sample
