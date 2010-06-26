@@ -26,21 +26,28 @@ import time
 import datetime
 import uuid
 
-
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
 default_distributor = 'urn:uuid:00000000-0000-0000-0000-000000000001'
 defaultport = 8080
+expiration_secs = 1800
+
+# print generated requests and server results
 debug = False
+
+# Don't communicate with the server
 dry_run = False
 
 # Show information about request serialization, for debugging
 # hmac issues
 show_serialization = False
 
-# Set this to a string to remove variable elements from the generated requests,
-# for debugging hmac / serialization issues.
+# Set this to a string to remove variable elements from the generated
+# requests, for debugging hmac / serialization issues.
 nonce = None
+
+# Ditto.  Sample: 2010-06-26T07:35:58+00:00
+expiration = None
 
 class Acs4Exception(Exception):
     pass
@@ -84,6 +91,9 @@ python acs4.py server request api request_type
     parser.add_option('--permissions',
                       action='store',
                       help='xml file of ACS4 permissions - for upload and request')
+    parser.add_option('--metadata',
+                      action='store',
+                      help='xml file of resource metadata - for upload.')
     parser.add_option('--datapath',
                       action='store',
                       help='server data path to use with upload')
@@ -154,6 +164,7 @@ python acs4.py server request api request_type
         print upload(server, fh, opts.password,
                      datapath=opts.datapath,
                      permissions=opts.permissions,
+                     metadata=opts.metadata,
                      port=opts.port)
     elif action == 'request':
         request_types = ['get', 'count', 'create', 'delete', 'update']
@@ -334,7 +345,8 @@ def request(server, api, action, request_args, password,
 
 
 def upload(server, filehandle, password,
-           datapath=None, port=defaultport, permissions=None):
+           datapath=None, port=defaultport,
+           metadata=None, permissions=None):
     """Upload a file to ACS4.
 
     Arguments:
@@ -354,6 +366,9 @@ def upload(server, filehandle, password,
         valid ACS4 xml fragment that includes a 'permissions' element
         should work.
 
+    metadata - Similar to permissions.  A flat name : value dict is
+        also accepted.  ACS4 will fill in missing values from the media.
+
     """
 
     xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
@@ -368,8 +383,14 @@ def upload(server, filehandle, password,
         etree.SubElement(root_el, 'dataPath').text = datapath
 
     if permissions is not None:
-        perms_el = read_perms_xml(permissions)
+        perms_el = read_xml(permissions, 'permissions')
         root_el.append(perms_el)
+    if metadata is not None:
+        try:
+            meta_el = o_to_meta_xml(metadata)
+        except TypeError:
+            meta_el = read_xml(metadata, 'metadata')
+        root_el.append(meta_el)
 
     add_envelope(root_el, password)
     etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
@@ -416,11 +437,13 @@ def post(request, server, port, api_path):
     headers = { 'Content-Type': 'application/vnd.adobe.adept+xml' }
     conn = httplib.HTTPConnection(server, port)
     conn.request('POST', api_path, request, headers)
-    return conn.getresponse().read()
+    result = conn.getresponse().read()
+    conn.close()
+    return result
 
 
 def add_envelope(el, password, debug=None):
-    etree.SubElement(el, 'expiration').text = make_expiration(3000) if nonce is None else nonce
+    etree.SubElement(el, 'expiration').text = make_expiration(expiration_secs) if expiration is None else expiration
     etree.SubElement(el, 'nonce').text = make_nonce() if nonce is None else nonce 
 
 
@@ -434,6 +457,8 @@ def make_nonce():
 
 
 def make_hmac(password, el):
+    """ Serialize an element and make an hmac with it and the given password """
+    
     passhasher = hashlib.sha1()
     passhasher.update(password)
     passhash = passhasher.digest()
@@ -449,9 +474,9 @@ def make_hmac(password, el):
     return base64.b64encode(mac.digest())
 
 
-# Serializes the xml element and children a la ACS4, and calls
-# 'update' on consumer with same
 def serialize_el(el, consumer):
+    """ Recursively serialize the given element to supplied consumer """
+
     def consume_str(s):
         # TODO might need to worry about unicode (s.encode('utf-8'))
         # if e.g. metadata has unicode.
@@ -465,17 +490,12 @@ def serialize_el(el, consumer):
     TEXT_NODE = '\x04'
     ATTRIBUTE = '\x05'
 
-    # TODO needs reexamine, as namespace doesn't seem to be present in
-    # subnodes.  Using el.nsmap - should verify behavior in presence
-    # of other namespaces.
-
     p = re.compile(r'(\{(.*)\})?(.*)')
     m = p.match(el.tag)
-    namespace = None
     namespace = m.group(2)
-    namespace = namespace if namespace is not None else ''
     localname = m.group(3)
-    namespace = el.nsmap[None]
+    if namespace is None:
+        namespace = el.nsmap[None]
 
     if namespace == AdeptNS and localname == 'signature':
         return
@@ -541,20 +561,32 @@ class debug_consumer:
         return self.s
 
 
-def read_perms_xml(permissions):
+def read_xml(xmlstr, nodename):
+    """ Parse an xml string and pluck out a named subelement. """
     ncparser = etree.XMLParser(remove_comments=True)
-    perms_arg_el = etree.fromstring(permissions, parser=ncparser)
-    if (perms_arg_el.tag == 'permissions' or
-        perms_arg_el.tag == AdeptNSBracketed + 'permissions'):
-        perms_el = perms_arg_el
+    arg_el = etree.fromstring(xmlstr, parser=ncparser)
+    if (arg_el.tag == nodename or
+        arg_el.tag == AdeptNSBracketed + nodename):
+        el = arg_el
     else:
-        perms_el = perms_arg_el.find('.//' + AdeptNSBracketed + 'permissions')
-    if perms_el is None:
-        perms_el = perms_arg_el.find('.//permissions')
-    if perms_el is None:
-        raise Acs4Exception('No permissions element in supplied permissions xml')
-    return perms_el
-    
+        el = arg_el.find('.//' + AdeptNSBracketed + nodename)
+    if el is None:
+        el = arg_el.find('.//' + nodename)
+    if el is None:
+        raise Acs4Exception('No ' + nodename + 'element in supplied '
+                            + nodename + ' xml')
+    return el
+
+
+def o_to_meta_xml(o):
+    """ Convert a dict of metadata into a valid dc metadata element """
+    dc = 'http://purl.org/dc/elements/1.1/'
+    dcb = '{' + dc + '}'
+    meta_el = etree.Element('metadata', nsmap = {'dc': dc})
+    for k, v in o.iteritems():
+        el = etree.SubElement(meta_el, dcb + k).text = v
+    return meta_el
+
 
 def xml_to_py(xml_string):
     o = objectify.fromstring(xml_string)
