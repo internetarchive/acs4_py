@@ -322,7 +322,7 @@ def request(server, api, action, request_args, password,
     api_el = etree.SubElement(root_el, api_el_name)
 
     if permissions is not None:
-        perms_el = read_perms_xml(permissions)
+        perms_el = read_xml(permissions, 'permissions')
         api_el.append(perms_el)
 
     for key in request_args.keys():
@@ -409,7 +409,7 @@ def upload(server, filehandle, password,
     return obj
 
 
-def queryresourceitems(server, password, distributor=None, port=defaultport, debug=False):
+def queryresourceitems(server, password, distributor=default_distributor, port=defaultport):
     xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <request xmlns="http://ns.adobe.com/adept"/>
 """
