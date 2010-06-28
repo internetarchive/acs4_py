@@ -10,7 +10,7 @@ curl http://servername.org/bss/bss.py/is_loaned_out/$arg
 
 curl http://servername.org/bss/bss.py/resource_info/$arg
 
-curl http://servername.org/bss/bss.py/filfillment_info/$arg
+curl http://servername.org/bss/bss.py/fulfillment_info/$arg
 
 
 If the argument is not specified, you get info about all resources.
