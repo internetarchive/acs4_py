@@ -19,3 +19,7 @@ python acs4.py $SERVER request DistributionRights create --password=$PW --distri
 # 'mint' a download url
 python acs4.py $SERVER mint --resource=$RSRC --distributor=$DIST
 
+
+
+'bss.py' is a server-side CGI for peeking under the ACS4 hood.  See
+README_bss for a bit more.
