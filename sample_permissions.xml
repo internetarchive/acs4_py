@@ -1,6 +1,14 @@
 <permissions>
   <display>
-    <device/>
+    <device/> <!-- only on a single device -- needed for returnable loans? -->
     <duration>1209600</duration> <!-- two weeks -->
   </display>
+  <excerpt>
+    <device/>
+    <count initial="3" max="5" incrementInterval="86400"/> <!-- one day -->
+  </excerpt>
+  <print>
+    <device/>
+    <count initial="3" max="5" incrementInterval="86400"/>
+  </print>
 </permissions>
