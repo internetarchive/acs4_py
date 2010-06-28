@@ -256,16 +256,6 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
             + urlargs + '&auth=' + auth)
     
 
-def get_distributor_info(server, password, distributor, port=defaultport):
-    request_args = { 'distributor':distributor }
-    reply = request(server, 'Distributor', 'get', request_args, password)
-    obj = xml_to_py(reply)
-    try:
-        result = obj['distributorData']
-    except KeyError:
-        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
-    return result
-
 
 def request(server, api, action, request_args, password,
             permissions=None, port=defaultport):
@@ -321,13 +311,20 @@ def request(server, api, action, request_args, password,
         api_el_name += 'Data'
     api_el = etree.SubElement(root_el, api_el_name)
 
+    for key in request_args.keys():
+        if request_args[key]:
+            if key == 'permissions':
+                # add permissions (an xml string) only if keyword arg
+                # isn't supplied
+                if permissions is None:
+                    perms_el = read_xml(request_args[key], 'permissions')
+                    api_el.append(perms_el)
+            else:
+                etree.SubElement(api_el, key).text = str(request_args[key])
+
     if permissions is not None:
         perms_el = read_xml(permissions, 'permissions')
         api_el.append(perms_el)
-
-    for key in request_args.keys():
-        if request_args[key]:
-            etree.SubElement(api_el, key).text = request_args[key]
 
     etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
     request = etree.tostring(tree,
@@ -439,6 +436,56 @@ def post(request, server, port, api_path):
     conn.request('POST', api_path, request, headers)
     result = conn.getresponse().read()
     conn.close()
+    xml = etree.fromstring(result)
+    if xml.tag == AdeptNSBracketed + 'error' or xml.tag == 'error':
+        raise Acs4Exception(xml.get('data'))
+    return result
+
+
+def get_distributor_info(server, password, distributor, port=defaultport):
+    request_args = { 'distributor': distributor }
+    reply = request(server, 'Distributor', 'get', request_args, password)
+    obj = xml_to_py(reply)
+    try:
+        result = obj['distributorData']
+    except KeyError:
+        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
+    return result
+
+
+def get_resource_info(server, password, resource, port=defaultport):
+    """ Get a dict of information describing a resource
+
+    Note that this is in the 'operator inventory', not as assigned to
+    a specific distributor.
+
+    The resource permissions are not recursively parsed, but are
+    returned as a string.
+
+    """
+    request_args = { 'resource': resource }
+    reply = request(server, 'ResourceKey', 'get', request_args, password, port=port)
+    obj = xml_to_py(reply)
+    try:
+        result = obj['resourceKey']
+    except KeyError:
+        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
+    return result
+
+
+def set_resource_info(server, password, resource_info, port=defaultport):
+    """ Set information for a resource, given a dict describing it.
+
+    The resource_info argument should be an object as returned from
+    set_resource_info().
+
+    """
+    reply = request(server, 'ResourceKey', 'update', resource_info, password, port=port)
+    obj = xml_to_py(reply)
+    try:
+        result = obj['resourceKey']
+    except KeyError:
+        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
     return result
 
 
@@ -561,10 +608,15 @@ class debug_consumer:
         return self.s
 
 
-def read_xml(xmlstr, nodename):
-    """ Parse an xml string and pluck out a named subelement. """
-    ncparser = etree.XMLParser(remove_comments=True)
-    arg_el = etree.fromstring(xmlstr, parser=ncparser)
+def read_xml(xml, nodename):
+    """ Parse xml (a string?) and pluck out a named subelement. """
+    if xml.__class__ == etree._Element:
+        # accept an etree Element
+        # TODO fix unpythonic above test?
+        arg_el = xml
+    else:
+        ncparser = etree.XMLParser(remove_comments=True)
+        arg_el = etree.fromstring(xml, parser=ncparser)
     if (arg_el.tag == nodename or
         arg_el.tag == AdeptNSBracketed + nodename):
         el = arg_el
@@ -594,6 +646,11 @@ def xml_to_py(xml_string):
 
 
 def objectified_to_py(o):
+    """ Make a dict from an 'objectified' representation of xml.
+
+    Special-case 'permissions' elements - return those as strings.
+
+    """
     if isinstance(o, objectify.IntElement):
         return int(o)
     if isinstance(o, objectify.NumberElement) or isinstance(o, objectify.FloatElement):
@@ -601,10 +658,13 @@ def objectified_to_py(o):
     if isinstance(o, objectify.ObjectifiedDataElement):
         return str(o)
     if hasattr(o, '__dict__'):
-        result = o.__dict__
-        for key, value in result.iteritems():
-            result[key] = objectified_to_py(value)
-        return result
+        if o.tag == AdeptNSBracketed + 'permissions' or o.tag == 'permissions':
+            return etree.tostring(o, pretty_print=True)
+        else:
+            result = o.__dict__
+            for key, value in result.iteritems():
+                result[key] = objectified_to_py(value)
+            return result
     return o
 
 
