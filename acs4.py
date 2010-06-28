@@ -188,9 +188,9 @@ python acs4.py server request api request_type
         request_args['resourceItem'] = opts.resourceItem
         request_args['notifyURL'] = opts.notifyURL
         request_args['user'] = opts.user
-        request(server, api, request_type, request_args, opts.password,
-                permissions=opts.permissions,
-                port=opts.port)
+        print request(server, api, request_type, request_args, opts.password,
+                      permissions=opts.permissions,
+                      port=opts.port)
 
     elif action == 'mint':
         distinfo = get_distributor_info(server, opts.password, opts.distributor,
@@ -319,6 +319,12 @@ def request(server, api, action, request_args, password,
                 if permissions is None:
                     perms_el = read_xml(request_args[key], 'permissions')
                     api_el.append(perms_el)
+            elif key == 'metadata':
+                try:
+                    meta_el = o_to_meta_xml(request_args[key])
+                except TypeError:
+                    meta_el = read_xml(request_args[key], 'metadata')
+                api_el.append(meta_el)
             else:
                 etree.SubElement(api_el, key).text = str(request_args[key])
 
@@ -439,6 +445,8 @@ def post(request, server, port, api_path):
     xml = etree.fromstring(result)
     if xml.tag == AdeptNSBracketed + 'error' or xml.tag == 'error':
         raise Acs4Exception(xml.get('data'))
+    # TODO is reply always 'error' or 'response' ?
+    # - so - if reponse isn't 'response', then error?
     return result
 
 
@@ -453,8 +461,10 @@ def get_distributor_info(server, password, distributor, port=defaultport):
     return result
 
 
-def get_resource_info(server, password, resource, port=defaultport):
-    """ Get a dict of information describing a resource
+def get_resourcekey_info(server, password, resource, port=defaultport):
+    """ Get a dict of information describing a resource.
+
+    This is where permissions are handled in the ACS4 database.
 
     Note that this is in the 'operator inventory', not as assigned to
     a specific distributor.
@@ -473,20 +483,46 @@ def get_resource_info(server, password, resource, port=defaultport):
     return result
 
 
-def set_resource_info(server, password, resource_info, port=defaultport):
+def set_resourcekey_info(server, password, info, port=defaultport):
     """ Set information for a resource, given a dict describing it.
 
     The resource_info argument should be an object as returned from
     set_resource_info().
 
     """
-    reply = request(server, 'ResourceKey', 'update', resource_info, password, port=port)
+    reply = request(server, 'ResourceKey', 'update', info, password, port=port)
     obj = xml_to_py(reply)
     try:
         result = obj['resourceKey']
     except KeyError:
         raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
     return result
+
+
+def get_resourceitem_info(server, password, resource, port=defaultport):
+    # TODO handle multiple return values
+    # request_args = { }
+    request_args = { 'resource': resource }
+    reply = request(server, 'ResourceItem', 'get', request_args, password, port=port)
+    obj = xml_to_py(reply)
+    try:
+        result = obj['resourceItemInfo']
+    except KeyError:
+        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
+    return result
+
+
+def set_resourceitem_info(server, password, info, port=defaultport):
+    """ note that acs4 won't let this change metadata info """
+
+    reply = request(server, 'ResourceItem', 'update', info, password, port=port)
+    obj = xml_to_py(reply)
+    try:
+        result = obj['resourceItemInfo']
+    except KeyError:
+        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
+    return result
+
 
 
 def add_envelope(el, password, debug=None):
@@ -609,6 +645,8 @@ class debug_consumer:
 
 
 def read_xml(xml, nodename):
+    # ??? make read_xml front for converting metadata, perms?
+
     """ Parse xml (a string?) and pluck out a named subelement. """
     if xml.__class__ == etree._Element:
         # accept an etree Element
@@ -640,6 +678,23 @@ def o_to_meta_xml(o):
     return meta_el
 
 
+def meta_xml_to_o(xml):
+    """ Convert an xml string containing a metadata element to a dict
+
+    Note that this is *not* general, as only one of any repeated
+    metadata element (which *is* allowed) will end up in the dict.
+
+    """
+    meta_el = read_xml(xml, 'metadata')
+    result = {}
+    for el in meta_el:
+        p = re.compile(r'(\{.*\})?(.*)')
+        m = p.match(el.tag)
+        localname = m.group(2)
+        result[localname] = el.text
+    return result
+
+
 def xml_to_py(xml_string):
     o = objectify.fromstring(xml_string)
     return objectified_to_py(o)
@@ -658,8 +713,10 @@ def objectified_to_py(o):
     if isinstance(o, objectify.ObjectifiedDataElement):
         return str(o)
     if hasattr(o, '__dict__'):
-        if o.tag == AdeptNSBracketed + 'permissions' or o.tag == 'permissions':
+        if o.tag in (AdeptNSBracketed + 'permissions', 'permissions'):
             return etree.tostring(o, pretty_print=True)
+        elif o.tag in (AdeptNSBracketed + 'metadata', 'metadata'):
+            return meta_xml_to_o(etree.tostring(o))
         else:
             result = o.__dict__
             for key, value in result.iteritems():
