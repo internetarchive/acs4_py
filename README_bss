@@ -1,0 +1,26 @@
+This hack is used to support lending returnable books - rather than
+piece together queries with the ACS4 xml API, we peek at the mysql
+database.
+
+Urls this supports:
+
+(arg=acs4 resource ID)
+
+curl http://servername.org/bss/bss.py/is_loaned_out/$arg
+
+curl http://servername.org/bss/bss.py/resource_info/$arg
+
+curl http://servername.org/bss/bss.py/filfillment_info/$arg
+
+
+If the argument is not specified, you get info about all resources.
+
+
+You might need indexes to help performance.  YMMV.
+
+
+Responses are in JSON.
+
+
+It'll be handy if your mysql and acs4 server system clocks are
+correct and in UTC.
