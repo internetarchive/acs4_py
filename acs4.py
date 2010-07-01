@@ -180,14 +180,16 @@ python acs4.py server request api request_type
         # TODO make this dynamic.  But opts is an optparse.Values, and
         # doesn't have __getitem__!  request_args = dict([(name,
         # opts[name]) for name in request_arg_names])
-        request_args['distributor'] = opts.distributor
-        request_args['resource'] = opts.resource
-        request_args['distributionType'] = opts.distributionType
-        request_args['available'] = opts.available
-        request_args['returnable'] = opts.returnable
-        request_args['resourceItem'] = opts.resourceItem
-        request_args['notifyURL'] = opts.notifyURL
-        request_args['user'] = opts.user
+        request_args = {
+            'distributor': opts.distributor,
+            'resource': opts.resource,
+            'distributionType': opts.distributionType,
+            'available': opts.available,
+            'returnable': opts.returnable,
+            'resourceItem': opts.resourceItem,
+            'notifyURL': opts.notifyURL,
+            'user': opts.user,
+            }
         print request(server, api, request_type, request_args, opts.password,
                       permissions=opts.permissions,
                       port=opts.port)
@@ -252,10 +254,12 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
     mac = hmac.new(base64.b64decode(secret), urlargs, hashlib.sha1)
     auth = mac.hexdigest()
     portstr = (':' + str(port)) if port is not 80 else ''
+
+    # replace with string format?
+    # construct with urlparse.unsplit()
     return ('http://' + server + portstr + '/fulfillment/URLLink.acsm?'
             + urlargs + '&auth=' + auth)
     
-
 
 def request(server, api, action, request_args, password,
             permissions=None, port=defaultport):
@@ -298,7 +302,6 @@ def request(server, api, action, request_args, password,
 
     tree = etree.parse(StringIO(xml))
     root_el = tree.getroot()
-    add_envelope(root_el, password)
     api_el_name = api[0].lower() + api[1:]
 
     # Several requests require a subelement name that's different from
@@ -332,18 +335,9 @@ def request(server, api, action, request_args, password,
         perms_el = read_xml(permissions, 'permissions')
         api_el.append(perms_el)
 
-    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
-    request = etree.tostring(tree,
-                             pretty_print=True,
-                             encoding='utf-8')
-    if debug:
-        print request
-    if dry_run:
-        return None
-    response = post(request, server, port,
+    response = post(root_el, server, port, password,
                     '/admin/Manage' + api[0].upper() + api[1:])
-    if debug:
-        print response
+
     return response
 
 
@@ -395,24 +389,14 @@ def upload(server, filehandle, password,
             meta_el = read_xml(metadata, 'metadata')
         root_el.append(meta_el)
 
-    add_envelope(root_el, password)
-    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
+    response = post(root_el, server, port, password,
+                    '/packaging/Package')
 
-    request = etree.tostring(tree,
-                             pretty_print=True,
-                             encoding='utf-8')
-    if debug:
-        print request
-    if dry_run:
-        return None
-    response = post(request, server, port, '/packaging/Package')
-    if debug:
-        print response
     obj = xml_to_py(response)
     return obj
 
 
-def queryresourceitems(server, password, distributor=default_distributor, port=defaultport):
+def queryresourceitems(server, password, distributor=None, port=defaultport):
     xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
 <request xmlns="http://ns.adobe.com/adept"/>
 """
@@ -420,29 +404,53 @@ def queryresourceitems(server, password, distributor=default_distributor, port=d
     root_el = tree.getroot()
     if distributor is not None:
         etree.SubElement(root_el, 'distributor').text = distributor;
-    add_envelope(root_el, password, debug=debug)
     etree.SubElement(root_el, 'QueryResourceItems')
-    etree.SubElement(root_el, 'hmac').text = make_hmac(password, root_el)
-    request = etree.tostring(tree,
+    response = post(root_el, server, port, password,
+                    '/admin/QueryResourceItems')
+
+    return response
+
+
+def post(xml, server, port, password, api_path):
+    """ sign and post supplied xml to server at api_path, returning the result.
+
+    Adds expiration, nonce and hmac to post.
+
+    Parses the reply for an error response, and throws an exception
+    one is found.
+
+    """
+
+    # convert provided string to etree
+    if isinstance(xml, basestring):
+        xml = etree.fromstring(xml)
+
+    # Add 'envelope' and hmac
+    post_expiration = make_expiration(expiration_secs) if expiration is None else expiration
+    etree.SubElement(xml, 'expiration').text = post_expiration
+    post_nonce = base64.b64encode(os.urandom(20))[:20] if nonce is None else nonce
+    etree.SubElement(xml, 'nonce').text = post_nonce
+    etree.SubElement(xml, 'hmac').text = make_hmac(password, xml)
+
+    request = etree.tostring(xml,
                              pretty_print=True,
                              encoding='utf-8')
     if debug:
         print request
     if dry_run:
         return None
-    response = post(request, server, port, '/admin/QueryResourceItems')
-    if debug:
-        print response
-    return response
 
-
-def post(request, server, port, api_path):
     headers = { 'Content-Type': 'application/vnd.adobe.adept+xml' }
     conn = httplib.HTTPConnection(server, port)
     conn.request('POST', api_path, request, headers)
     result = conn.getresponse().read()
     conn.close()
+
+    if debug:
+        print result
+
     xml = etree.fromstring(result)
+    # TODO is there a way to get first el without parsing the whole thing?
     if xml.tag == AdeptNSBracketed + 'error' or xml.tag == 'error':
         raise Acs4Exception(xml.get('data'))
     # TODO is reply always 'error' or 'response' ?
@@ -524,19 +532,9 @@ def set_resourceitem_info(server, password, info, port=defaultport):
     return result
 
 
-
-def add_envelope(el, password, debug=None):
-    etree.SubElement(el, 'expiration').text = make_expiration(expiration_secs) if expiration is None else expiration
-    etree.SubElement(el, 'nonce').text = make_nonce() if nonce is None else nonce 
-
-
 def make_expiration(seconds):
     t = datetime.datetime.utcnow() + datetime.timedelta(seconds=seconds)
     return t.strftime("%Y-%m-%dT%H:%M:%S+00:00")
-
-
-def make_nonce():
-    return base64.b64encode(os.urandom(20))[:20]
 
 
 def make_hmac(password, el):
@@ -648,6 +646,11 @@ def read_xml(xml, nodename):
     # ??? make read_xml front for converting metadata, perms?
 
     """ Parse xml (a string?) and pluck out a named subelement. """
+    # if xml is etree._Element
+    # - instead: if has nodetype
+    # - or whatever
+    # - or hasattr
+    # or just start with isinstance basestring
     if xml.__class__ == etree._Element:
         # accept an etree Element
         # TODO fix unpythonic above test?
@@ -663,6 +666,7 @@ def read_xml(xml, nodename):
     if el is None:
         el = arg_el.find('.//' + nodename)
     if el is None:
+        # string formatting here
         raise Acs4Exception('No ' + nodename + 'element in supplied '
                             + nodename + ' xml')
     return el
@@ -708,7 +712,7 @@ def objectified_to_py(o):
     """
     if isinstance(o, objectify.IntElement):
         return int(o)
-    if isinstance(o, objectify.NumberElement) or isinstance(o, objectify.FloatElement):
+    if isinstance(o, (objectify.NumberElement, objectify.FloatElement))
         return float(o)
     if isinstance(o, objectify.ObjectifiedDataElement):
         return str(o)
