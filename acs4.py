@@ -489,7 +489,8 @@ def read_xml(xml, nodename):
         # TODO fix unpythonic above test?
         arg_el = xml
     else:
-        ncparser = etree.XMLParser(remove_comments=True)
+        ncparser = etree.XMLParser(remove_comments=True,
+                                   remove_blank_text=True)
         arg_el = etree.fromstring(xml, parser=ncparser)
     if (arg_el.tag == nodename or
         arg_el.tag == AdeptNSBracketed + nodename):
