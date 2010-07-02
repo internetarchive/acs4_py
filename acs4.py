@@ -141,9 +141,9 @@ def request(server, api, action, request_args, password,
     USE WITH CARE, this API can break your acs4 install!
     """
 
-    root_el = etree.Element('request',
-                            { 'action': action, 'auth': 'builtin' },
-                            nsmap={None: AdeptNS})
+    el = etree.Element('request',
+                       { 'action': action, 'auth': 'builtin' },
+                       nsmap={None: AdeptNS})
     api_el_name = api[0].lower() + api[1:]
 
     # Several requests require a subelement name that's different from
@@ -154,7 +154,7 @@ def request(server, api, action, request_args, password,
     if api_el_name in ('distributor', 'license'
                        'fulfillment', 'fulfillmentItem'):
         api_el_name += 'Data'
-    api_el = etree.SubElement(root_el, api_el_name)
+    api_el = etree.SubElement(el, api_el_name)
 
     for key in request_args.keys():
         if request_args[key]:
@@ -177,7 +177,7 @@ def request(server, api, action, request_args, password,
         perms_el = read_xml(permissions, 'permissions')
         api_el.append(perms_el)
 
-    response = post(root_el, server, port, password,
+    response = post(el, server, port, password,
                     '/admin/Manage' + api[0].upper() + api[1:])
 
     return response
@@ -210,24 +210,24 @@ def upload(server, filehandle, password,
 
     """
 
-    root_el = etree.Element('package', nsmap={None: AdeptNS})
+    el = etree.Element('package', nsmap={None: AdeptNS})
 
     if filehandle is not None:
-        etree.SubElement(root_el, 'data').text = base64.encodestring(filehandle.read())
+        etree.SubElement(el, 'data').text = base64.encodestring(filehandle.read())
     else:
-        etree.SubElement(root_el, 'dataPath').text = datapath
+        etree.SubElement(el, 'dataPath').text = datapath
 
     if permissions is not None:
         perms_el = read_xml(permissions, 'permissions')
-        root_el.append(perms_el)
+        el.append(perms_el)
     if metadata is not None:
         try:
             meta_el = o_to_meta_xml(metadata)
         except TypeError:
             meta_el = read_xml(metadata, 'metadata')
-        root_el.append(meta_el)
+        el.append(meta_el)
 
-    response = post(root_el, server, port, password,
+    response = post(el, server, port, password,
                     '/packaging/Package')
 
     obj = xml_to_py(response)
