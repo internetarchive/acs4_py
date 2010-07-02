@@ -1,6 +1,6 @@
 <permissions>
   <display>
-    <device/> <!-- only on a single device -- needed for returnable loans? -->
+    <device/> <!-- only on a single device - needed for returnable loans? -->
     <duration>1209600</duration> <!-- two weeks -->
   </display>
   <excerpt>
