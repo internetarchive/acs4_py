@@ -141,12 +141,9 @@ def request(server, api, action, request_args, password,
     USE WITH CARE, this API can break your acs4 install!
     """
 
-    xml = ('<?xml version="1.0" encoding="UTF-8" standalone="no"?>' +
-        '<request action="' + action
-           + '" auth="builtin" xmlns="http://ns.adobe.com/adept"/>')
-
-    tree = etree.parse(StringIO(xml))
-    root_el = tree.getroot()
+    root_el = etree.Element('request',
+                            { 'action': action, 'auth': 'builtin' },
+                            nsmap={None: AdeptNS})
     api_el_name = api[0].lower() + api[1:]
 
     # Several requests require a subelement name that's different from
@@ -213,11 +210,7 @@ def upload(server, filehandle, password,
 
     """
 
-    xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<package xmlns="http://ns.adobe.com/adept"/>
-"""
-    tree = etree.parse(StringIO(xml))
-    root_el = tree.getroot()
+    root_el = etree.Element('package', nsmap={None: AdeptNS})
 
     if filehandle is not None:
         etree.SubElement(root_el, 'data').text = base64.encodestring(filehandle.read())
@@ -242,17 +235,12 @@ def upload(server, filehandle, password,
 
 
 def queryresourceitems(server, password, distributor=None, port=defaultport):
-    xml = """<?xml version="1.0" encoding="UTF-8" standalone="no"?>
-<request xmlns="http://ns.adobe.com/adept"/>
-"""
-    tree = etree.parse(StringIO(xml))
-    root_el = tree.getroot()
+    el = etree.Element('request', nsmap={None: AdeptNS})
     if distributor is not None:
-        etree.SubElement(root_el, 'distributor').text = distributor;
-    etree.SubElement(root_el, 'QueryResourceItems')
-    response = post(root_el, server, port, password,
+        etree.SubElement(el, 'distributor').text = distributor;
+    etree.SubElement(el, 'QueryResourceItems')
+    response = post(el, server, port, password,
                     '/admin/QueryResourceItems')
-
     return response
 
 
