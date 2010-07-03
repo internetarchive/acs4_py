@@ -9,6 +9,7 @@ queryresourceitems, upload, request and mint.
 import sys
 import optparse
 import acs4
+import json
 
 def main(argv):
     class MyParser(optparse.OptionParser):
@@ -16,15 +17,17 @@ def main(argv):
         def format_epilog(self, formatter):
             return self.epilog
 
-    parser = MyParser(usage='usage: %prog [options] server_url action [arg]',
+    parser = MyParser(usage='usage: %prog [options] SERVER ACTION',
                       version='%prog 0.1',
-                      description='Interact with ACS.',
+                      description='Interact with ACS.  Action is one of "mint", "queryresourceitems", "upload" or "request".  See examples below.',
                       epilog="""
+Examples:
 
 python acs4.py server mint --distributor='uuid' --resource='uuid'
-python acs4.py server queryresourceitems # requires --distributor=defaultdist
+python acs4.py server queryresourceitems
 python acs4.py server upload [filename] (or --datapath=/server/path/book.epub)
 python acs4.py server request api request_type
+
         api is: (id is:)
                 DistributionRights      (distributor + resource)
                 Distributor             (distributor)
@@ -47,12 +50,6 @@ python acs4.py server request api request_type
     parser.add_option('--permissions',
                       action='store',
                       help='xml file of ACS4 perms - for upload and request')
-    parser.add_option('--metadata',
-                      action='store',
-                      help='xml file of resource metadata - for upload.')
-    parser.add_option('--datapath',
-                      action='store',
-                      help='server data path to use with upload')
     parser.add_option('-d', '--debug',
                       action='store_true',
                       help='Print debugging output')
@@ -63,6 +60,33 @@ python acs4.py server request api request_type
                       action='store',
                       default=acs4.defaultport,
                       help='Server port to use (default 8080)')
+
+
+    group = optparse.OptionGroup(parser, "Request arguments",
+                                    "Arguments specific to 'request' actions")
+    group.add_option('--start',
+                     action='store',
+                     type='int',
+                     default='0',
+                     help='Start of items to fetch with request get')
+    group.add_option('--count',
+                     action='store',
+                     type='int',
+                     default='0',
+                     help='Count of items to fetch with request get')
+    parser.add_option_group(group)
+
+
+    group = optparse.OptionGroup(parser, "Upload arguments",
+                                 "Arguments specific to 'upload' action")
+    group.add_option('--datapath',
+                      action='store',
+                      help='server data path to use with upload')
+    group.add_option('--metadata',
+                     action='store',
+                     help='xml file of resource metadata - for upload.')
+    parser.add_option_group(group)
+
 
     # also repeat these below, near 'dynamic'
     request_arg_names = ['distributor',
@@ -75,9 +99,24 @@ python acs4.py server request api request_type
                          'user',
                          ]
     for name in request_arg_names:
-        parser.add_option('--' + name,
-                               action='store',
-                               help=name + ' argument for request')
+        # 'available' - int
+        # user - needed?
+        
+        
+        if name in ('distributor', 'resource'):
+            parser.add_option('--' + name,
+                              action='store',
+                              metavar='UUID',
+                              help=name + ' argument for request')
+        elif name == 'notifyURL':
+            parser.add_option('--' + name,
+                              action='store',
+                              metavar='URL',
+                              help=name + ' argument for request')
+        else:
+            parser.add_option('--' + name,
+                              action='store',
+                              help=name + ' argument for request')
 
     opts, args = parser.parse_args(argv)
 
@@ -101,9 +140,14 @@ python acs4.py server request api request_type
         parser.error('action arg should be one of ' + ', '.join(actions))
         
     if action == 'queryresourceitems':
-        print acs4.queryresourceitems(server, opts.password,
-                                      distributor=opts.distributor,
-                                      port=opts.port)
+        result = acs4.queryresourceitems(server, opts.password,
+                                         start=opts.start,
+                                         count=opts.count,
+                                         distributor=opts.distributor,
+                                         port=opts.port)
+        json.dump(result, sys.stdout, indent=4, sort_keys=True)
+        print
+
     elif action == 'upload':
         fh = None
         if len(args) == 3:
@@ -116,11 +160,14 @@ python acs4.py server request api request_type
                 parser.error('please supply filename or --datapath argument')
         else:
             parser.error('Wrong number of args supplied to upload action')
-        print acs4.upload(server, fh, opts.password,
-                          datapath=opts.datapath,
-                          permissions=opts.permissions,
-                          metadata=opts.metadata,
-                          port=opts.port)
+        result = acs4.upload(server, fh, opts.password,
+                             datapath=opts.datapath,
+                             permissions=opts.permissions,
+                             metadata=opts.metadata,
+                             port=opts.port)
+        json.dump(result, sys.stdout, indent=4, sort_keys=True)
+        print
+
     elif action == 'request':
         request_types = ['get', 'count', 'create', 'delete', 'update']
         joined = ', '.join(request_types)
@@ -148,12 +195,21 @@ python acs4.py server request api request_type
             'notifyURL': opts.notifyURL,
             'user': opts.user,
             }
-        print acs4.request(server, api, request_type, request_args,
-                           opts.password,
-                           permissions=opts.permissions,
-                           port=opts.port)
+        result = acs4.request(server, api, request_type, request_args,
+                              opts.password,
+                              start=opts.start,
+                              count=opts.count,
+                              permissions=opts.permissions,
+                              port=opts.port)
+        json.dump(result, sys.stdout, indent=4, sort_keys=True)
+        print
 
     elif action == 'mint':
+
+        # XXX also opt for supplying name, sharedsecret?  would skip
+        # rt to server.
+        
+        
         if not opts.resource or not opts.distributor:
             parser.error('Please supply --resource= and --distributor='
                          ' arguments for mint')

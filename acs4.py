@@ -107,6 +107,7 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
     
 
 def request(server, api, action, request_args, password,
+            start=0, count=0,
             permissions=None, port=defaultport):
     """Make a xml-mediated DB request to the ACS4 server.
 
@@ -139,12 +140,14 @@ def request(server, api, action, request_args, password,
         should work.
 
     USE WITH CARE, this API can break your acs4 install!
-    """
 
+    """
     el = etree.Element('request',
                        { 'action': action, 'auth': 'builtin' },
                        nsmap={None: AdeptNS})
     api_el_name = api[0].lower() + api[1:]
+
+    add_limit_el(el, start, count)
 
     # Several requests require a subelement name that's different from
     # the API; these are special-cased here.  It's not clear if
@@ -157,21 +160,26 @@ def request(server, api, action, request_args, password,
     api_el = etree.SubElement(el, api_el_name)
 
     for key in request_args.keys():
-        if request_args[key]:
+        v = request_args[key]
+        if v:
             if key == 'permissions':
                 # add permissions (an xml string) only if keyword arg
                 # isn't supplied
                 if permissions is None:
-                    perms_el = read_xml(request_args[key], 'permissions')
+                    if isinstance(v, dict):
+                        perms_el = o_to_el(v, 'permissions')
+                    else:
+                        perms_el = read_xml(v, 'permissions')
                     api_el.append(perms_el)
             elif key == 'metadata':
-                try:
-                    meta_el = o_to_meta_xml(request_args[key])
-                except TypeError:
-                    meta_el = read_xml(request_args[key], 'metadata')
+                if isinstance(v, dict):
+                    meta_el = o_to_meta_xml(v)
+                else:
+                    meta_el = read_xml(v, 'metadata')
                 api_el.append(meta_el)
             else:
-                etree.SubElement(api_el, key).text = str(request_args[key])
+                # TODO: handle sub-dicts.  Are they ever needed?
+                etree.SubElement(api_el, key).text = str(v)
 
     if permissions is not None:
         perms_el = read_xml(permissions, 'permissions')
@@ -179,8 +187,10 @@ def request(server, api, action, request_args, password,
 
     response = post(el, server, port, password,
                     '/admin/Manage' + api[0].upper() + api[1:])
-
-    return response
+    if response is None:
+        return None
+    return [el_to_o(info_el) for info_el in
+            response.findall('.//' + AdeptNSBracketed + api_el_name)]
 
 
 def upload(server, filehandle, password,
@@ -203,7 +213,8 @@ def upload(server, filehandle, password,
         if any.  The best way to get this is to configure a sample
         book in the ACS4 admin console UI, then copy it here.  Any
         valid ACS4 xml fragment that includes a 'permissions' element
-        should work.
+        should work.  A permissions sub-dict as returned by other
+        calls will also work.
 
     metadata - Similar to permissions.  A flat name : value dict is
         also accepted.  ACS4 will fill in missing values from the media.
@@ -218,30 +229,41 @@ def upload(server, filehandle, password,
         etree.SubElement(el, 'dataPath').text = datapath
 
     if permissions is not None:
-        perms_el = read_xml(permissions, 'permissions')
+        if isinstance(permissions, dict):
+            perms_el = o_to_el(permissions, 'permissions')
+        else:
+            perms_el = read_xml(permissions, 'permissions')
         el.append(perms_el)
     if metadata is not None:
-        try:
-            meta_el = o_to_meta_xml(metadata)
-        except TypeError:
+        if isinstance(metadata, dict):
+            meta_el = o_to_meta_el(metadata)
+        else:
             meta_el = read_xml(metadata, 'metadata')
         el.append(meta_el)
 
     response = post(el, server, port, password,
                     '/packaging/Package')
+    if response is None:
+        return None
+    return el_to_o(response)
 
-    obj = xml_to_py(response)
-    return obj
 
-
-def queryresourceitems(server, password, distributor=None, port=defaultport):
+def queryresourceitems(server, password,
+                       start=0, count=0,
+                       distributor=None, port=defaultport):
     el = etree.Element('request', nsmap={None: AdeptNS})
     if distributor is not None:
         etree.SubElement(el, 'distributor').text = distributor;
+
+    add_limit_el(el, start, count)
+
     etree.SubElement(el, 'QueryResourceItems')
     response = post(el, server, port, password,
                     '/admin/QueryResourceItems')
-    return response
+    if response is None:
+        return None
+    return [el_to_o(info_el) for info_el in
+            response.findall('.//' + AdeptNSBracketed + 'resourceItemInfo')]
 
 
 def post(xml, server, port, password, api_path):
@@ -276,30 +298,26 @@ def post(xml, server, port, password, api_path):
     headers = { 'Content-Type': 'application/vnd.adobe.adept+xml' }
     conn = httplib.HTTPConnection(server, port)
     conn.request('POST', api_path, request, headers)
-    result = conn.getresponse().read()
+
+    try:
+        response_str = conn.getresponse().read()
+        response = etree.fromstring(response_str) # XXX could read directly?
+    except etree.XMLSyntaxError:
+        raise Acs4Exception("Couldn't parse server response as XML: " + response_str)
     conn.close()
 
     if debug:
-        print result
+        print response_str
 
-    xml = etree.fromstring(result)
-    # TODO is there a way to get first el without parsing the whole thing?
-    if xml.tag == AdeptNSBracketed + 'error' or xml.tag == 'error':
-        raise Acs4Exception(xml.get('data'))
-    # TODO is reply always 'error' or 'response' ?
-    # - so - if reponse isn't 'response', then error?
-    return result
+    if response.tag == etree.QName(AdeptNS, 'error'):
+        raise Acs4Exception(urllib.unquote(response.get('data')))
+    return response
 
 
 def get_distributor_info(server, password, distributor, port=defaultport):
     request_args = { 'distributor': distributor }
     reply = request(server, 'Distributor', 'get', request_args, password)
-    obj = xml_to_py(reply)
-    try:
-        result = obj['distributorData']
-    except KeyError:
-        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
-    return result
+    return reply[0]
 
 
 def get_resourcekey_info(server, password, resource, port=defaultport):
@@ -316,12 +334,7 @@ def get_resourcekey_info(server, password, resource, port=defaultport):
     """
     request_args = { 'resource': resource }
     reply = request(server, 'ResourceKey', 'get', request_args, password, port=port)
-    obj = xml_to_py(reply)
-    try:
-        result = obj['resourceKey']
-    except KeyError:
-        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
-    return result
+    return reply[0]
 
 
 def set_resourcekey_info(server, password, info, port=defaultport):
@@ -332,37 +345,34 @@ def set_resourcekey_info(server, password, info, port=defaultport):
 
     """
     reply = request(server, 'ResourceKey', 'update', info, password, port=port)
-    obj = xml_to_py(reply)
-    try:
-        result = obj['resourceKey']
-    except KeyError:
-        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
-    return result
+    return reply[0]
 
 
 def get_resourceitem_info(server, password, resource, port=defaultport):
-    # TODO handle multiple return values
-    # request_args = { }
+    # handle multiples?
     request_args = { 'resource': resource }
     reply = request(server, 'ResourceItem', 'get', request_args, password, port=port)
-    obj = xml_to_py(reply)
-    try:
-        result = obj['resourceItemInfo']
-    except KeyError:
-        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
-    return result
+    return reply[0]
 
 
 def set_resourceitem_info(server, password, info, port=defaultport):
     """ note that acs4 won't let this change metadata info """
 
     reply = request(server, 'ResourceItem', 'update', info, password, port=port)
-    obj = xml_to_py(reply)
-    try:
-        result = obj['resourceItemInfo']
-    except KeyError:
-        raise Acs4Exception('Query result did not have the expected structure:\n' + reply)
-    return result
+    return reply[0]
+
+
+def add_limit_el(el, start, count):
+    if start != 0 or count != 0:
+        if start != 0 and count == 0:
+            raise Acs4Exception('Please provide count when using start')
+        if start < 0 or count < 0:
+            raise Acs4Exception('Please use positive values for count and start')
+        limit_el = etree.SubElement(el, 'limit')
+        if start != 0:
+            etree.SubElement(limit_el, 'start').text = str(start)
+        if count != 0:
+            etree.SubElement(limit_el, 'count').text = str(count)
 
 
 def make_expiration(seconds):
@@ -506,61 +516,59 @@ def read_xml(xml, nodename):
     return el
 
 
-def o_to_meta_xml(o):
+def decompose_tag(tag):
+    p = re.compile(r'(\{(.*)\})?(.*)')
+    m = p.match(tag)
+    namespace = m.group(2)
+    localname = m.group(3)
+    return namespace, localname
+
+
+def el_to_o(el):
+    if len(el) == 0:
+        if el.tag == AdeptNSBracketed + 'count' or el.tag == 'count':
+            result = {}
+            for attr in ('initial', 'max', 'incrementInterval'):
+                if el.get(attr):
+                    result[attr] = el.get(attr)
+            return result
+        else:
+            return el.text
+    result = {}
+    for kid in el:
+        namespace, localname = decompose_tag(kid.tag)
+        result[localname] = el_to_o(kid)
+        # print localname
+        # if localname in result:
+        #     # convert to list
+        #     result[localname] = [result[localname]]
+        # else:
+    return result
+
+
+def o_to_meta_el(o):
     """ Convert a dict of metadata into a valid dc metadata element """
     dc = 'http://purl.org/dc/elements/1.1/'
     dcb = '{' + dc + '}'
     meta_el = etree.Element('metadata', nsmap = {'dc': dc})
     for k, v in o.iteritems():
-        el = etree.SubElement(meta_el, dcb + k).text = v
+        etree.SubElement(meta_el, dcb + k).text = v
     return meta_el
 
 
-def meta_xml_to_o(xml):
-    """ Convert an xml string containing a metadata element to a dict
-
-    Note that this is *not* general, as only one of any repeated
-    metadata element (which *is* allowed) will end up in the dict.
-
-    """
-    meta_el = read_xml(xml, 'metadata')
-    result = {}
-    for el in meta_el:
-        p = re.compile(r'(\{.*\})?(.*)')
-        m = p.match(el.tag)
-        localname = m.group(2)
-        result[localname] = el.text
-    return result
-
-
-def xml_to_py(xml_string):
-    o = objectify.fromstring(xml_string)
-    return objectified_to_py(o)
-
-
-def objectified_to_py(o):
-    """ Make a dict from an 'objectified' representation of xml.
-
-    Special-case 'permissions' elements - return those as strings.
-
-    """
-    if isinstance(o, objectify.IntElement):
-        return int(o)
-    if isinstance(o, (objectify.NumberElement, objectify.FloatElement)):
-        return float(o)
-    if isinstance(o, objectify.ObjectifiedDataElement):
-        return str(o)
-    if hasattr(o, '__dict__'):
-        if o.tag in (AdeptNSBracketed + 'permissions', 'permissions'):
-            return etree.tostring(o, pretty_print=True)
-        elif o.tag in (AdeptNSBracketed + 'metadata', 'metadata'):
-            return meta_xml_to_o(etree.tostring(o))
+def o_to_el(o, name):
+    if name == 'metadata':
+        return o_to_meta_xml(o)
+    el = etree.Element(name)
+    for k, v in o.iteritems():
+        if isinstance(v, dict):
+            el.append(o_to_el(v, k))
         else:
-            result = o.__dict__
-            for key, value in result.iteritems():
-                result[key] = objectified_to_py(value)
-            return result
-    return o
+            if name == 'count': # this is the only element with attributes in the schema?
+                el.set(k, v)
+            else:
+                etree.SubElement(el, k).text = v
+    return el
 
 
 if __name__ == '__main__':
