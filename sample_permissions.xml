@@ -12,3 +12,28 @@
     <count initial="3" max="5" incrementInterval="86400"/>
   </print>
 </permissions>
+
+<!-- This can also be expressed as:
+{
+    "display": {
+        "device": null, 
+        "duration": "1209600"
+    }, 
+    "excerpt": {
+        "count": {
+            "incrementInterval": "86400", 
+            "initial": "3", 
+            "max": "5"
+        }, 
+        "device": null
+    }, 
+    "print": {
+        "count": {
+            "incrementInterval": "86400", 
+            "initial": "3", 
+            "max": "5"
+        }, 
+        "device": null
+    }
+} 
+-->
