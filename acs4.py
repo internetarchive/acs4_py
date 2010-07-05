@@ -382,10 +382,24 @@ def make_expiration(seconds):
 
 def make_hmac(password, el):
     """ Serialize an element and make an hmac with it and the given password """
-    
-    passhasher = hashlib.sha1()
-    passhasher.update(password)
-    passhash = passhasher.digest()
+
+    # Accept either a base64-encoded shared secret, or a password
+    # string.  If a password string is passed in, hash it.  As it
+    # turns out, the ACS4 console password, hashed, is the default
+    # distributor's shared secret.
+
+    passhash = None
+    if len(password) == 28 and password[-1] == '=':
+        try:
+            passhash = base64.b64decode(password)
+        except TypeError:
+            # if it's not a valid base64-encoded string, just move on.
+            pass
+    if passhash is None:
+        passhasher = hashlib.sha1()
+        passhasher.update(password)
+        passhash = passhasher.digest()
+
     mac = hmac.new(passhash, '', hashlib.sha1)
 
     if show_serialization:
