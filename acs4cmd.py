@@ -41,7 +41,7 @@ python acs4.py server request api request_type
         request_type is: 'get count create delete update'
 
         USE WITH CARE, this can break your acs4 install!
-        
+
 """)
 
     parser.add_option('-p', '--password',
@@ -101,8 +101,8 @@ python acs4.py server request api request_type
     for name in request_arg_names:
         # 'available' - int
         # user - needed?
-        
-        
+
+
         if name in ('distributor', 'resource'):
             parser.add_option('--' + name,
                               action='store',
@@ -138,7 +138,7 @@ python acs4.py server request api request_type
     actions = ['queryresourceitems', 'upload', 'request', 'mint']
     if not action in actions:
         parser.error('action arg should be one of ' + ', '.join(actions))
-        
+
     if action == 'queryresourceitems':
         result = acs4.queryresourceitems(server, opts.password,
                                          start=opts.start,
@@ -181,7 +181,7 @@ python acs4.py server request api request_type
         if not request_type in request_types:
             parser.error('Request type should be one of ' + joined)
         request_args = {}
-        
+
         # TODO make this dynamic.  But opts is an optparse.Values, and
         # doesn't have __getitem__!  request_args = dict([(name,
         # opts[name]) for name in request_arg_names])
@@ -208,8 +208,8 @@ python acs4.py server request api request_type
 
         # XXX also opt for supplying name, sharedsecret?  would skip
         # rt to server.
-        
-        
+
+
         if not opts.resource or not opts.distributor:
             parser.error('Please supply --resource= and --distributor='
                          ' arguments for mint')
