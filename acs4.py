@@ -13,7 +13,6 @@ import math
 import httplib
 import urllib
 from lxml import etree
-from lxml import objectify
 from StringIO import StringIO
 import base64
 import hmac
@@ -81,7 +80,7 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
 
     if not action in ['enterloan', 'enterorder']:
         raise Acs4Exception('mint action argument should be enterloan or enterorder')
-    
+
     if orderid is None:
         orderid = uuid.uuid4().urn
     argsobj = {
@@ -104,7 +103,7 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
     # construct with urlparse.unsplit()
     return ('http://' + server + portstr + '/fulfillment/URLLink.acsm?'
             + urlargs + '&auth=' + auth)
-    
+
 
 def request(server, api, action, request_args, password,
             start=0, count=0,
@@ -421,7 +420,7 @@ def serialize_el(el, consumer):
         consumer.update(chr((len(s) >> 8) & 0xff))
         consumer.update(chr((len(s) & 0xff)))
         consumer.update(s)
-                        
+
     BEGIN_ELEMENT = '\x01'
     END_ATTRIBUTES = '\x02'
     END_ELEMENT = '\x03'
@@ -437,7 +436,7 @@ def serialize_el(el, consumer):
 
     if namespace == AdeptNS and localname == 'signature':
         return
-    
+
     consumer.update(BEGIN_ELEMENT)
     consume_str(namespace)
     consume_str(localname)
