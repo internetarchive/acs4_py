@@ -188,6 +188,8 @@ def request(server, api, action, request_args, password,
                     '/admin/Manage' + api[0].upper() + api[1:])
     if response is None:
         return None
+    if action == 'count':
+        return int(response.find('.//' + AdeptNSBracketed + 'count').text)
     return [el_to_o(info_el) for info_el in
             response.findall('.//' + AdeptNSBracketed + api_el_name)]
 
