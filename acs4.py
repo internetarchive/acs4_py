@@ -250,7 +250,7 @@ def upload(server, filehandle, password,
 
 
 def queryresourceitems(server, password,
-                       start=0, count=0,
+                       start=0, count=10,
                        distributor=None, port=defaultport):
     el = etree.Element('request', nsmap={None: AdeptNS})
     if distributor is not None:
