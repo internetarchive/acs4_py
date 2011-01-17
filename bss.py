@@ -28,6 +28,7 @@ import uuid
 urls = (
   '/is_loaned_out/?(.*)', 'is_loaned_out',
   '/fulfillment_info/?(.*)', 'fulfillment_info',
+  '/resource_info_by_id/?(.*)', 'resource_info_by_id', # must precede below
   '/resource_info/?(.*)', 'resource_info',
 )
 
@@ -271,7 +272,47 @@ class acs4db():
 
         return resources
 
+    def get_resource_info_by_id(self, identifier=None):
+        """
+        Returns a list of resource entries matching a given
+        identifier.  Each resource also includes a 'loanstatus' entry
+        (see is_loaned_out) that might be null.
+
+        This depends on the 'identifier' metadata field being set
+        appropriately at resource load time.
+        """
+
+        resources = []
+
+        if identifier == '' or identifier is None:
+            return resources
+
+        self.connect()
+        c = self.conn.cursor()
+
+        sql = """
+            SELECT *
+                FROM resourceitem
+                    WHERE identifier = %s
+                        ORDER BY format
+        """
+        c.execute(sql, (identifier, ))
+
+        r = self._fetchone_dict(c)
+        while r != None:
+            r['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=r['resourceid']))
+            loanstatuses = self.get_loaned_out(r['resourceid'])
+            if len(loanstatuses) > 0:
+                loanstatus = loanstatuses[0]
+            else:
+                loanstatus = None
+            r['loanstatus'] = loanstatus
+            resources.append(r)
+            r = self._fetchone_dict(c)
         
+        return resources
+
+
 class is_loaned_out:
     def GET(self, resource):
         web.header("Content-Type", 'text/plain')
@@ -290,6 +331,11 @@ class resource_info:
         db = acs4db()
         return json.dumps(db.get_resource_info(resource), sort_keys=True, indent=4)
 
+class resource_info_by_id:
+    def GET(self, identifier):
+        web.header("Content-Type", 'text/plain')
+        db = acs4db()
+        return json.dumps(db.get_resource_info_by_id(identifier), sort_keys=True, indent=4)
 
 if __name__ == "__main__":
     app.run()
