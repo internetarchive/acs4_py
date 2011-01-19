@@ -416,9 +416,9 @@ def make_hmac(password, el):
 def serialize_el(el, consumer):
     """ Recursively serialize the given element to supplied consumer """
 
-    def consume_str(s):
-        # TODO might need to worry about unicode (s.encode('utf-8'))
-        # if e.g. metadata has unicode.
+    def consume_str(s, encoding='utf-8'):
+        if isinstance(s, unicode):
+            s = s.encode(encoding)
         consumer.update(chr((len(s) >> 8) & 0xff))
         consumer.update(chr((len(s) & 0xff)))
         consumer.update(s)
