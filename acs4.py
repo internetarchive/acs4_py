@@ -144,6 +144,10 @@ def request(server, api, action, request_args, password,
     el = etree.Element('request',
                        { 'action': action, 'auth': 'builtin' },
                        nsmap={None: AdeptNS})
+
+    # XXX NOTE new 'replace' action supported in 4.1 server...
+    # syntax is possibly <action>replace</action> - not action='replace'!
+
     api_el_name = api[0].lower() + api[1:]
 
     add_limit_el(el, start, count)
