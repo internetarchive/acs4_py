@@ -178,10 +178,9 @@ def request(server, api, action, request_args, password,
                 api_el.append(meta_el)
             else:
                 # TODO: handle sub-dicts.  Are they ever needed?
-                x = v
-                if not isinstance(x, basestring):
-                    x = str(v)
-                etree.SubElement(api_el, key).text = str(x)
+                if not isinstance(v, basestring):
+                    v = str(v)
+                etree.SubElement(api_el, key).text = v
 
     if permissions is not None:
         perms_el = read_xml(permissions, 'permissions')
