@@ -481,7 +481,8 @@ class ContentServer:
                 response.findall('.//' + AdeptNSBracketed + api_el_name)]
 
     def upload(self, filehandle,
-               datapath=None, metadata=None, permissions=None):
+               datapath=None, metadata=None, permissions=None,
+               thumbnailhandle=None):
         """Upload a file to ACS4.
 
         Arguments:
@@ -502,14 +503,21 @@ class ContentServer:
             is also accepted.  ACS4 will fill in missing values from
             the media.
 
+        thumbnailhandle - a filehandle to a thumbnail image
+
         """
 
         el = etree.Element('package', nsmap={None: AdeptNS})
 
         if filehandle is not None:
-            etree.SubElement(el, 'data').text = base64.encodestring(filehandle.read())
+            etree.SubElement(el, 'data').text = \
+                base64.encodestring(filehandle.read())
         else:
             etree.SubElement(el, 'dataPath').text = datapath
+
+        if thumbnailhandle is not None:
+            etree.SubElement(el, 'thumbnailData').text = \
+                base64.encodestring(thumbnailhandle.read())
 
         if permissions is not None:
             if isinstance(permissions, dict):
