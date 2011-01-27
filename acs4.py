@@ -13,7 +13,6 @@ import math
 import httplib
 import urllib
 from lxml import etree
-from StringIO import StringIO
 import base64
 import hmac
 import hashlib
@@ -47,231 +46,6 @@ expiration = None
 
 class Acs4Exception(Exception):
     pass
-
-def mint(server, secret, resource, action, ordersource, rights=None, orderid=None, port=defaultport):
-    """Create an acs4 download link.
-
-    'secret' should be the base-64 encoded secret key string for the
-    resource distributor.  This can be obtained by calling
-    get_distributor_info and using sharedSecret from the result.
-
-    Arguments:
-    server
-    secret - distributor_info['sharedSecret']
-    resource - the acs4 resource uuid
-    action - 'enterloan' or 'enterorder'
-    ordersource - 'My Store Name', or distributor_info['name']
-
-    Keyword arguments:
-
-    rights - Used to further restrict rights on downloaded resource.
-        See Content Server Technical Reference, section 3.4 for
-        details on this string.  To expire the book in one day, and
-        allow printing 2 pages per hour, specify
-        rights='$lrt#86400$$prn#2#3600$'  Yep.  Note that this can't
-        extend the rights already granted in ACS4.
-
-    orderid - an opaque token, 'orderid' in generated link, notifyurl
-        posts.  Note that this *must* be unique (within the expiration
-        window) or loan fulfillment will fail.  If not supplied, a
-        random one will be generated.
-
-    """
-
-    if not action in ['enterloan', 'enterorder']:
-        raise Acs4Exception('mint action argument should be enterloan or enterorder')
-
-    if orderid is None:
-        orderid = uuid.uuid4().urn
-    argsobj = {
-        'action': action,
-        'ordersource': ordersource,
-        'orderid': orderid,
-        'resid': resource,
-        'gbauthdate': make_expiration(0),
-        'dateval': str(int(time.time())),
-        'gblver': 4
-        }
-    if rights is not None:
-        argsobj['rights'] = rights
-    urlargs = urllib.urlencode(argsobj)
-    mac = hmac.new(base64.b64decode(secret), urlargs, hashlib.sha1)
-    auth = mac.hexdigest()
-    portstr = (':' + str(port)) if port is not 80 else ''
-
-    # replace with string format?
-    # construct with urlparse.unsplit()
-    return ('http://' + server + portstr + '/fulfillment/URLLink.acsm?'
-            + urlargs + '&auth=' + auth)
-
-
-def request(server, api, action, request_args, password,
-            start=0, count=0,
-            permissions=None, port=defaultport):
-    """Make a xml-mediated DB request to the ACS4 server.
-
-    Arguments:
-    server
-
-    api - one of: (unique id required to e.g. get a single instance)
-                DistributionRights      (distributor + resource)
-                Distributor             (distributor)
-                Fulfillment             (fulfillment)
-                FulfillmentItem         (fulfillment)
-                License                 (user + resource)
-                ResourceItem            (resource + item)
-                ResourceKey             (resource)
-                UserPublic              (user)
-
-    action - 'get count create delete update'
-
-    request_args - a dict of elements to be added as children of the
-        'api element' (e.g. distributionRights).  Note *all* must be
-        supplied for 'update' action, or the remainder will be nulled.
-
-    Keyword arguments:
-    port
-
-    permissions - This should be xml describing the item permissions,
-        if any.  The best way to get this is to configure a sample
-        book in the ACS4 admin console UI, then copy it here.  Any
-        valid ACS4 xml fragment that includes a 'permissions' element
-        should work.
-
-    USE WITH CARE, this API can break your acs4 install!
-
-    """
-    el = etree.Element('request',
-                       { 'action': action, 'auth': 'builtin' },
-                       nsmap={None: AdeptNS})
-
-    # XXX NOTE new 'replace' action supported in 4.1 server...
-    # syntax is possibly <action>replace</action> - not action='replace'!
-
-    api_el_name = api[0].lower() + api[1:]
-
-    add_limit_el(el, start, count)
-
-    # Several requests require a subelement name that's different from
-    # the API; these are special-cased here.  It's not clear if
-    # there's any system to them.
-    if api_el_name == 'resourceItem':
-        api_el_name += 'Info'
-    if api_el_name in ('distributor', 'license'
-                       'fulfillment', 'fulfillmentItem'):
-        api_el_name += 'Data'
-    api_el = etree.SubElement(el, api_el_name)
-
-    for key in request_args.keys():
-        v = request_args[key]
-        if v:
-            if key == 'permissions':
-                # add permissions (an xml string) only if keyword arg
-                # isn't supplied
-                if permissions is None:
-                    if isinstance(v, dict):
-                        perms_el = o_to_el(v, 'permissions')
-                    else:
-                        perms_el = read_xml(v, 'permissions')
-                    api_el.append(perms_el)
-            elif key == 'metadata':
-                if isinstance(v, dict):
-                    meta_el = o_to_meta_xml(v)
-                else:
-                    meta_el = read_xml(v, 'metadata')
-                api_el.append(meta_el)
-            else:
-                # TODO: handle sub-dicts.  Are they ever needed?
-                if not isinstance(v, basestring):
-                    v = str(v)
-                etree.SubElement(api_el, key).text = v
-
-    if permissions is not None:
-        perms_el = read_xml(permissions, 'permissions')
-        api_el.append(perms_el)
-
-    response = post(el, server, port, password,
-                    '/admin/Manage' + api[0].upper() + api[1:])
-    if response is None:
-        return None
-    if action == 'count':
-        return int(response.find('.//' + AdeptNSBracketed + 'count').text)
-    return [el_to_o(info_el) for info_el in
-            response.findall('.//' + AdeptNSBracketed + api_el_name)]
-
-
-def upload(server, filehandle, password,
-           datapath=None, port=defaultport,
-           metadata=None, permissions=None):
-    """Upload a file to ACS4.
-
-    Arguments:
-    server
-    filehandle
-    password
-
-    Keyword arguments:
-    port
-
-    datapath - Path ON SERVER to file to be packaged.  When this is supplied,
-        filehandle should be None.
-
-    permissions - This should be xml describing the item permissions,
-        if any.  The best way to get this is to configure a sample
-        book in the ACS4 admin console UI, then copy it here.  Any
-        valid ACS4 xml fragment that includes a 'permissions' element
-        should work.  A permissions sub-dict as returned by other
-        calls will also work.
-
-    metadata - Similar to permissions.  A flat name : value dict is
-        also accepted.  ACS4 will fill in missing values from the media.
-
-    """
-
-    el = etree.Element('package', nsmap={None: AdeptNS})
-
-    if filehandle is not None:
-        etree.SubElement(el, 'data').text = base64.encodestring(filehandle.read())
-    else:
-        etree.SubElement(el, 'dataPath').text = datapath
-
-    if permissions is not None:
-        if isinstance(permissions, dict):
-            perms_el = o_to_el(permissions, 'permissions')
-        else:
-            perms_el = read_xml(permissions, 'permissions')
-        el.append(perms_el)
-    if metadata is not None:
-        if isinstance(metadata, dict):
-            meta_el = o_to_meta_el(metadata)
-        else:
-            meta_el = read_xml(metadata, 'metadata')
-        el.append(meta_el)
-
-    response = post(el, server, port, password,
-                    '/packaging/Package')
-    if response is None:
-        return None
-    return el_to_o(response)
-
-
-def queryresourceitems(server, password,
-                       start=0, count=10,
-                       distributor=None, port=defaultport):
-    el = etree.Element('request', nsmap={None: AdeptNS})
-    if distributor is not None:
-        etree.SubElement(el, 'distributor').text = distributor;
-
-    add_limit_el(el, start, count)
-
-    etree.SubElement(el, 'QueryResourceItems')
-    response = post(el, server, port, password,
-                    '/admin/QueryResourceItems')
-    if response is None:
-        return None
-    return [el_to_o(info_el) for info_el in
-            response.findall('.//' + AdeptNSBracketed + 'resourceItemInfo')]
-
 
 def post(xml, server, port, password, api_path):
     """ sign and post supplied xml to server at api_path, returning the result.
@@ -319,54 +93,6 @@ def post(xml, server, port, password, api_path):
     if response.tag == etree.QName(AdeptNS, 'error'):
         raise Acs4Exception(urllib.unquote(response.get('data')))
     return response
-
-
-def get_distributor_info(server, password, distributor, port=defaultport):
-    request_args = { 'distributor': distributor }
-    reply = request(server, 'Distributor', 'get', request_args, password)
-    return reply[0]
-
-
-def get_resourcekey_info(server, password, resource, port=defaultport):
-    """ Get a dict of information describing a resource.
-
-    This is where permissions are handled in the ACS4 database.
-
-    Note that this is in the 'operator inventory', not as assigned to
-    a specific distributor.
-
-    The resource permissions are not recursively parsed, but are
-    returned as a string.
-
-    """
-    request_args = { 'resource': resource }
-    reply = request(server, 'ResourceKey', 'get', request_args, password, port=port)
-    return reply[0]
-
-
-def set_resourcekey_info(server, password, info, port=defaultport):
-    """ Set information for a resource, given a dict describing it.
-
-    The resource_info argument should be an object as returned from
-    set_resource_info().
-
-    """
-    reply = request(server, 'ResourceKey', 'update', info, password, port=port)
-    return reply[0]
-
-
-def get_resourceitem_info(server, password, resource, port=defaultport):
-    # handle multiples?
-    request_args = { 'resource': resource }
-    reply = request(server, 'ResourceItem', 'get', request_args, password, port=port)
-    return reply[0]
-
-
-def set_resourceitem_info(server, password, info, port=defaultport):
-    """ note that acs4 won't let this change metadata info """
-
-    reply = request(server, 'ResourceItem', 'update', info, password, port=port)
-    return reply[0]
 
 
 def add_limit_el(el, start, count):
@@ -592,5 +318,282 @@ def o_to_el(o, name):
     return el
 
 
+class ContentServer:
+    def __init__(self, host, port, password, distributor=None):
+        self.host = host
+        self.port = port
+        self.password = password
+        self.distributor = distributor # acs uses default distributor if None
+        
+        # Contact server to get shared secret for signing
+        # XXX I think this can be gotten just hashing the password?
+        # Is it done this way ask a means of splitting privs?
+        # if so, add name as argument?
+        # see comment @ make_hmac
+        result = self.get_distributor_info()
+        self.shared_secret = result['sharedSecret']
+        self.name = result['name']
+
+    # xxx is get_loan_link a better name?  other?
+    def mint(self, resource,
+             action='enterloan', rights=None, orderid=None, ordersource=None):
+        """Create an acs4 download link.
+
+        Arguments:
+        resource - the acs4 resource uuid
+
+        Keyword arguments:
+        action - 'enterloan' or 'enterorder'
+
+        rights - Used to further restrict rights on downloaded resource.
+            See Content Server Technical Reference, section 3.4 for
+            details on this string.  To expire the book in one day, and
+            allow printing 2 pages per hour, specify
+            rights='$lrt#86400$$prn#2#3600$'  Yep.  Note that this can't
+            extend the rights already granted in ACS4.
+
+        orderid - an opaque token, 'orderid' in generated link, notifyurl
+            posts.  Note that this *must* be unique (within the expiration
+            window) or loan fulfillment will fail.  If not supplied, a
+            random one will be generated.
+
+        ordersource - 'My Store Name', or distributor_info['name'] if
+            not supplied
+
+        """
+        if ordersource is None:
+            ordersource = self.name
+
+        if not action in ['enterloan', 'enterorder']:
+            raise Acs4Exception('mint action argument should be enterloan or enterorder')
+
+        if orderid is None:
+            orderid = uuid.uuid4().urn
+        argsobj = {
+            'action': action,
+            'ordersource': ordersource,
+            'orderid': orderid,
+            'resid': resource,
+            'gbauthdate': make_expiration(0),
+            'dateval': str(int(time.time())),
+            'gblver': 4
+            }
+        if rights is not None:
+            argsobj['rights'] = rights
+        urlargs = urllib.urlencode(argsobj)
+        mac = hmac.new(base64.b64decode(shared_secret), urlargs, hashlib.sha1)
+        auth = mac.hexdigest()
+        portstr = (':' + str(self.port)) if port is not 80 else ''
+
+        # replace with string format?
+        # construct with urlparse.unsplit()
+        return ('http://' + self.host + portstr + '/fulfillment/URLLink.acsm?'
+                + urlargs + '&auth=' + auth)
+
+
+    def request(self, api, action, request_args,
+                start=0, count=0, permissions=None):
+        """Make a xml-mediated DB request to the ACS4 server.
+
+        api - one of: (unique id required to e.g. get a single instance)
+                    DistributionRights      (distributor + resource)
+                    Distributor             (distributor)
+                    Fulfillment             (fulfillment)
+                    FulfillmentItem         (fulfillment)
+                    License                 (user + resource)
+                    ResourceItem            (resource + item)
+                    ResourceKey             (resource)
+                    UserPublic              (user)
+
+        action - 'get count create delete update'
+
+        request_args - a dict of elements to be added as children of the
+            'api element' (e.g. distributionRights).  Note *all* must be
+            supplied for 'update' action, or the remainder will be nulled.
+
+        Keyword arguments:
+
+        permissions - This should be xml describing the item permissions,
+            if any.  The best way to get this is to configure a sample
+            book in the ACS4 admin console UI, then copy it here.  Any
+            valid ACS4 xml fragment that includes a 'permissions' element
+            should work.
+
+        USE WITH CARE, this API can break your acs4 install!
+
+        """
+        el = etree.Element('request',
+                           { 'action': action, 'auth': 'builtin' },
+                           nsmap={None: AdeptNS})
+
+        # XXX NOTE new 'replace' action supported in 4.1 server...
+        # syntax is possibly <action>replace</action> - not action='replace'!
+
+        api_el_name = api[0].lower() + api[1:]
+
+        add_limit_el(el, start, count)
+
+        # Several requests require a subelement name that's different from
+        # the API; these are special-cased here.  It's not clear if
+        # there's any system to them.
+        if api_el_name == 'resourceItem':
+            api_el_name += 'Info'
+        if api_el_name in ('distributor', 'license'
+                           'fulfillment', 'fulfillmentItem'):
+            api_el_name += 'Data'
+        api_el = etree.SubElement(el, api_el_name)
+
+        for key in request_args.keys():
+            v = request_args[key]
+            if v:
+                if key == 'permissions':
+                    # add permissions (an xml string) only if keyword arg
+                    # isn't supplied
+                    if permissions is None:
+                        if isinstance(v, dict):
+                            perms_el = o_to_el(v, 'permissions')
+                        else:
+                            perms_el = read_xml(v, 'permissions')
+                        api_el.append(perms_el)
+                elif key == 'metadata':
+                    if isinstance(v, dict):
+                        meta_el = o_to_meta_el(v)
+                    else:
+                        meta_el = read_xml(v, 'metadata')
+                    api_el.append(meta_el)
+                else:
+                    # TODO: handle sub-dicts.  Are they ever needed?
+                    if not isinstance(v, basestring):
+                        v = str(v)
+                    etree.SubElement(api_el, key).text = v
+
+        if permissions is not None:
+            perms_el = read_xml(permissions, 'permissions')
+            api_el.append(perms_el)
+
+        response = post(el, self.host, self.port, self.password,
+                        '/admin/Manage' + api[0].upper() + api[1:])
+        if response is None:
+            return None
+        if action == 'count':
+            return int(response.find('.//' + AdeptNSBracketed + 'count').text)
+        return [el_to_o(info_el) for info_el in
+                response.findall('.//' + AdeptNSBracketed + api_el_name)]
+
+    def upload(self, filehandle,
+               datapath=None, metadata=None, permissions=None):
+        """Upload a file to ACS4.
+
+        Arguments:
+        filehandle
+
+        Keyword arguments:
+        datapath - Path ON SERVER to file to be packaged.  When this is
+            supplied, filehandle should be None.
+
+        permissions - This should be xml describing the item
+            permissions, if any.  The best way to get this is to
+            configure a sample book in the ACS4 admin console UI, then
+            copy it here.  Any valid ACS4 xml fragment that includes a
+            'permissions' element should work.  A permissions sub-dict
+            as returned by other calls will also work.
+
+        metadata - Similar to permissions.  A flat name : value dict
+            is also accepted.  ACS4 will fill in missing values from
+            the media.
+
+        """
+
+        el = etree.Element('package', nsmap={None: AdeptNS})
+
+        if filehandle is not None:
+            etree.SubElement(el, 'data').text = base64.encodestring(filehandle.read())
+        else:
+            etree.SubElement(el, 'dataPath').text = datapath
+
+        if permissions is not None:
+            if isinstance(permissions, dict):
+                perms_el = o_to_el(permissions, 'permissions')
+            else:
+                perms_el = read_xml(permissions, 'permissions')
+            el.append(perms_el)
+        if metadata is not None:
+            if isinstance(metadata, dict):
+                meta_el = o_to_meta_el(metadata)
+            else:
+                meta_el = read_xml(metadata, 'metadata')
+            el.append(meta_el)
+
+        response = post(el, self.host, self.port, self.password,
+                        '/packaging/Package')
+        if response is None:
+            return None
+        return el_to_o(response)
+
+
+    def queryresourceitems(self, start=0, count=10, distributor=None):
+        el = etree.Element('request', nsmap={None: AdeptNS})
+        if distributor is not None:
+            etree.SubElement(el, 'distributor').text = distributor;
+        add_limit_el(el, start, count)
+        etree.SubElement(el, 'QueryResourceItems')
+        response = post(el, self.host, self.port, self.password,
+                        '/admin/QueryResourceItems')
+        if response is None:
+            return None
+        return [el_to_o(info_el) for info_el in
+                response.findall('.//' + AdeptNSBracketed + 'resourceItemInfo')]
+
+    # below are 'derived actions - shortcuts'
+    # XXX abstract with decorator?
+    def get_distributor_info(self, distributor=None):
+        if distributor is None:
+            distributor = self.distributor
+        request_args = { 'distributor': distributor }
+        reply = self.request('Distributor', 'get', request_args)
+        return reply[0]
+
+    def get_resourcekey_info(self, resource):
+        """ Get a dict of information describing a resource.
+
+        This is where permissions are handled in the ACS4 database.
+
+        Note that this is in the 'operator inventory', not as assigned to
+        a specific distributor.
+
+        The resource permissions are not recursively parsed, but are
+        returned as a string.
+
+        """
+        request_args = { 'resource': resource }
+        reply = self.request('ResourceKey', 'get', request_args)
+        return reply[0]
+
+    def set_resourcekey_info(self, info):
+        """ Set information for a resource, given a dict describing it.
+
+        The resource_info argument should be an object as returned from
+        get_resourcekey_info().
+
+        """
+        reply = self.request('ResourceKey', 'update', info)
+        return reply[0]
+
+
+    def get_resourceitem_info(self, resource):
+        # handle multiples?
+        request_args = { 'resource': resource }
+        reply = self.request('ResourceItem', 'get')
+        return reply[0]
+
+
+    def set_resourceitem_info(self, info):
+        """ note that acs4 won't let this change metadata info """
+
+        reply = self.request('ResourceItem', 'update', info)
+        return reply[0]
+
+
 if __name__ == '__main__':
+    # XXX tests go here... see example in WindowedIterator
     raise Exception('not to be called as a __main__')
