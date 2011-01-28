@@ -12,6 +12,9 @@ curl http://servername.org/bss/bss.py/resource_info/$arg
 
 curl http://servername.org/bss/bss.py/fulfillment_info/$arg
 
+(arg=resource 'identifier' metadata string)
+curl http://servername.org/bss/bss.py/resource_info_by_id/$arg
+
 
 If the argument is not specified, you get info about all resources.
 
