@@ -1,8 +1,7 @@
 """
 Copyright(c)2010 Internet Archive. Software license AGPL version 3.
 
-Entry points - call from command line, or see:
-queryresourceitems, upload, request and mint.
+A library for interacting with acs4 xml API.  See example use at bottom.
 
 """
 
@@ -24,8 +23,8 @@ import uuid
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
 default_distributor = 'urn:uuid:00000000-0000-0000-0000-000000000001'
-defaultport = 8080
-expiration_secs = 1800
+defaultport = 80
+expiration_secs = 1800 # expiration time for a given nonce? needs note
 
 # print generated requests and server results
 debug = False
@@ -47,16 +46,10 @@ expiration = None
 class Acs4Exception(Exception):
     pass
 
-def post(xml, server, port, password, api_path):
-    """ sign and post supplied xml to server at api_path, returning the result.
 
-    Adds expiration, nonce and hmac to post.
-
-    Parses the reply for an error response, and throws an exception
-    one is found.
-
-    """
-
+def add_hmac_envelope(xml, password):
+    """ Compute and add expiration, nonce and hmac elements to supplied xml.
+    xml can be a string or an etree element. """
     # convert provided string to etree
     if isinstance(xml, basestring):
         xml = etree.fromstring(xml)
@@ -66,11 +59,21 @@ def post(xml, server, port, password, api_path):
     etree.SubElement(xml, 'expiration').text = post_expiration
     post_nonce = base64.b64encode(os.urandom(20))[:20] if nonce is None else nonce
     etree.SubElement(xml, 'nonce').text = post_nonce
-    etree.SubElement(xml, 'hmac').text = make_hmac(password, xml)
+    etree.SubElement(xml, 'hmac').text = make_hmac(xml, password)
 
-    request = etree.tostring(xml,
-                             pretty_print=True,
-                             encoding='utf-8')
+    return etree.tostring(xml,
+                          pretty_print=True,
+                          encoding='utf-8')
+
+
+def post(request, server, port, api_path):
+    """ post supplied request to server at api_path, returning the result.
+
+    Parses the reply for an error response, and throws an exception
+    one is found.
+
+    """
+
     if debug:
         print request
     if dry_run:
@@ -113,7 +116,7 @@ def make_expiration(seconds):
     return t.strftime("%Y-%m-%dT%H:%M:%S+00:00")
 
 
-def make_hmac(password, el):
+def make_hmac(el, password):
     """ Serialize an element and make an hmac with it and the given password """
 
     # Accept either a base64-encoded shared secret, or a password
@@ -178,6 +181,8 @@ def serialize_el(el, consumer):
     # TODO sort: "Attributes are sorted first by their namespaces and
     # then by their names; sorting is done bytewise on UTF-8
     # representations."
+    #
+    # Not yet clear that this is needed at all in acs4 request xml.
 
     keys = el.attrib.keys()
     keys.sort()
@@ -207,7 +212,6 @@ def serialize_el(el, consumer):
                     break
     for child in el:
         serialize_el(child, consumer)
-
     consumer.update(END_ELEMENT)
 
 
@@ -470,8 +474,8 @@ class ContentServer:
         if permissions is not None:
             perms_el = read_xml(permissions, 'permissions')
             api_el.append(perms_el)
-
-        response = post(el, self.host, self.port, self.password,
+        signed_request = add_hmac_envelope(el, self.password)
+        response = post(signed_request, self.host, self.port,
                         '/admin/Manage' + api[0].upper() + api[1:])
         if response is None:
             return None
@@ -532,7 +536,8 @@ class ContentServer:
                 meta_el = read_xml(metadata, 'metadata')
             el.append(meta_el)
 
-        response = post(el, self.host, self.port, self.password,
+        signed_request = add_hmac_envelope(el, self.password)
+        response = post(signed_request, self.host, self.port,
                         '/packaging/Package')
         if response is None:
             return None
@@ -545,7 +550,8 @@ class ContentServer:
             etree.SubElement(el, 'distributor').text = distributor;
         add_limit_el(el, start, count)
         etree.SubElement(el, 'QueryResourceItems')
-        response = post(el, self.host, self.port, self.password,
+        signed_request = add_hmac_envelope(el, self.password)
+        response = post(signed_request, self.host, self.port,
                         '/admin/QueryResourceItems')
         if response is None:
             return None
