@@ -126,7 +126,7 @@ python acs4.py server request api request_type
         if name in ('distributor', 'resource'):
             parser.add_option('--' + name,
                               action='store',
-                              default=None
+                              default=None,
                               metavar='UUID',
                               help=name + ' argument for request')
         elif name == 'notifyURL':
