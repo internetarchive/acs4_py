@@ -55,9 +55,11 @@ def add_hmac_envelope(xml, password):
         xml = etree.fromstring(xml)
 
     # Add 'envelope' and hmac
-    post_expiration = make_expiration(expiration_secs) if expiration is None else expiration
+    post_expiration = make_expiration(expiration_secs) \
+        if expiration is None else expiration
     etree.SubElement(xml, 'expiration').text = post_expiration
-    post_nonce = base64.b64encode(os.urandom(20))[:20] if nonce is None else nonce
+    post_nonce = base64.b64encode(os.urandom(20))[:20] \
+        if nonce is None else nonce
     etree.SubElement(xml, 'nonce').text = post_nonce
     etree.SubElement(xml, 'hmac').text = make_hmac(xml, password)
 
@@ -87,7 +89,8 @@ def post(request, server, port, api_path):
         response_str = conn.getresponse().read()
         response = etree.fromstring(response_str) # XXX could read directly?
     except etree.XMLSyntaxError:
-        raise Acs4Exception("Couldn't parse server response as XML: " + response_str)
+        raise Acs4Exception("Couldn't parse server response as XML: "
+                            + response_str)
     conn.close()
 
     if debug:
@@ -103,7 +106,8 @@ def add_limit_el(el, start, count):
         if start != 0 and count == 0:
             raise Acs4Exception('Please provide count when using start')
         if start < 0 or count < 0:
-            raise Acs4Exception('Please use positive values for count and start')
+            raise Acs4Exception('Please use positive values '
+                                'for count and start')
         limit_el = etree.SubElement(el, 'limit')
         if start != 0:
             etree.SubElement(limit_el, 'start').text = str(start)
@@ -261,9 +265,7 @@ def read_xml(xml, nodename):
     if el is None:
         el = arg_el.find('.//' + nodename)
     if el is None:
-        # string formatting here
-        raise Acs4Exception('No ' + nodename + 'element in supplied '
-                            + nodename + ' xml')
+        raise Acs4Exception('No %s element in supplied xml' % (nodename))
     return el
 
 
@@ -315,7 +317,7 @@ def o_to_el(o, name):
         if isinstance(v, dict):
             el.append(o_to_el(v, k))
         else:
-            if name == 'count': # this is the only element with attributes in the schema?
+            if name == 'count': # this is the only el with attrs in the schema?
                 el.set(k, v)
             else:
                 etree.SubElement(el, k).text = v
@@ -369,7 +371,8 @@ class ContentServer:
             ordersource = self.name
 
         if not action in ['enterloan', 'enterorder']:
-            raise Acs4Exception('mint action argument should be enterloan or enterorder')
+            raise Acs4Exception('mint action argument should be '
+                                'enterloan or enterorder')
 
         if orderid is None:
             orderid = uuid.uuid4().urn
