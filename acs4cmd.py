@@ -19,7 +19,9 @@ def main(argv):
 
     parser = MyParser(usage='usage: %prog [options] SERVER ACTION',
                       version='%prog 0.1',
-                      description='Interact with ACS.  Action is one of "mint", "queryresourceitems", "upload" or "request".  See examples below.',
+                      description='Interact with ACS. '
+                      'Action is one of "mint", "queryresourceitems", '
+                      '"upload" or "request".  See examples below.',
                       epilog="""
 Examples:
 
@@ -106,6 +108,7 @@ python acs4.py server request api request_type
         if name in ('distributor', 'resource'):
             parser.add_option('--' + name,
                               action='store',
+                              default=None
                               metavar='UUID',
                               help=name + ' argument for request')
         elif name == 'notifyURL':
@@ -139,12 +142,13 @@ python acs4.py server request api request_type
     if not action in actions:
         parser.error('action arg should be one of ' + ', '.join(actions))
 
+
+    c = acs4.ContentServer(server, opts.port, opts.password, opts.distributor)
+
     if action == 'queryresourceitems':
-        result = acs4.queryresourceitems(server, opts.password,
-                                         start=opts.start,
-                                         count=opts.count,
-                                         distributor=opts.distributor,
-                                         port=opts.port)
+        result = c.queryresourceitems(start=opts.start,
+                                      count=opts.count,
+                                      distributor=opts.distributor)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)
         print
 
@@ -160,11 +164,9 @@ python acs4.py server request api request_type
                 parser.error('please supply filename or --datapath argument')
         else:
             parser.error('Wrong number of args supplied to upload action')
-        result = acs4.upload(server, fh, opts.password,
-                             datapath=opts.datapath,
-                             permissions=opts.permissions,
-                             metadata=opts.metadata,
-                             port=opts.port)
+        result = c.upload(fh, datapath=opts.datapath,
+                          metadata=opts.metadata,
+                          permissions=opts.permissions)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)
         print
 
@@ -195,31 +197,17 @@ python acs4.py server request api request_type
             'notifyURL': opts.notifyURL,
             'user': opts.user,
             }
-        result = acs4.request(server, api, request_type, request_args,
-                              opts.password,
-                              start=opts.start,
-                              count=opts.count,
-                              permissions=opts.permissions,
-                              port=opts.port)
+        result = c.request(api, request_type, request_args,
+                           start=opts.start, count=opts.count,
+                           permissions=opts.permissions)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)
         print
 
-    elif action == 'mint':
+    if action == 'mint':
+        if not opts.resource:
+            parser.error('Please supply --resource argument for mint')
+        print c.mint(opts.resource, 'enterloan')
 
-        # XXX also opt for supplying name, sharedsecret?  would skip
-        # rt to server.
-
-
-        if not opts.resource or not opts.distributor:
-            parser.error('Please supply --resource= and --distributor='
-                         ' arguments for mint')
-        distinfo = acs4.get_distributor_info(server, opts.password,
-                                             opts.distributor,
-                                             port=opts.port)
-        secret = distinfo['sharedSecret']
-        name = distinfo['name']
-        print acs4.mint(server, secret, opts.resource, 'enterloan', name,
-                        port=opts.port)
     parser.destroy()
 
 
