@@ -1,25 +1,17 @@
-A basic API for interacting with the Adobe Content Server.
+## A basic API for interacting with the Adobe Content Server.
 
-Sample use (command line)
+### acs4.py
 
-SERVER=your.server.here
-PW=your_password
-DIST=distributor_uuid
-RSRC=resource_uuid
+api.  Entry points:
+* add_hmac_envelope() - adds expiration, nonce and hmac to supplied xml
+* ContentServer() - abstracts communication with an acs4 server.
 
-# upload file
-python acs4.py $SERVER upload sample.epub --password=$PW
-# ... this returns some JSON, which includes the newly assigned resource ID
-# ... or (for large files)
-python acs4.py $SERVER upload --datapath=/server/path/sample.epub --password=$PW
+### acs4cmd.py
 
-# 'distribute' it, as a loanable, returnable book
-python acs4.py $SERVER request DistributionRights create --password=$PW --distributionType=loan --returnable=true --available=1 --permissions=sample_permissions.xml --resource=$RSRC --distributor=$DIST
+A shell wrapper to acs4.py.
 
-# 'mint' a download url
-python acs4.py $SERVER mint --resource=$RSRC --distributor=$DIST
+### bss.py
 
-
-
-'bss.py' is a server-side CGI for peeking under the ACS4 hood.  See
+A server-side CGI for peeking under the ACS4 hood.  See
 README_bss for a bit more.
+
