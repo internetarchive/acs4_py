@@ -1,8 +1,26 @@
 """
 Copyright(c)2010 Internet Archive. Software license AGPL version 3.
 
-Entry points - call from command line, or see:
-queryresourceitems, upload, request and mint.
+Command-line wrapper for acs4.py.
+
+Sample use:
+
+SERVER=your.server.here
+PW=your_password
+DIST=distributor_uuid
+RSRC=resource_uuid
+
+# upload file
+python acs4cmd.py $SERVER upload sample.epub --password=$PW
+# ... this returns some JSON, which includes the newly assigned resource ID
+# ... or (for large files)
+python acs4cmd.py $SERVER upload --datapath=/server/path/sample.epub --password=$PW
+
+# 'distribute' it, as a loanable, returnable book
+python acs4cmd.py $SERVER request DistributionRights create --password=$PW --distributionType=loan --returnable=true --available=1 --permissions=sample_permissions.xml --resource=$RSRC --distributor=$DIST
+
+# 'mint' a download url
+python acs4cmd.py $SERVER mint --resource=$RSRC --distributor=$DIST
 
 """
 
