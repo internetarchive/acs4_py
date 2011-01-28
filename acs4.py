@@ -325,20 +325,15 @@ def o_to_el(o, name):
 
 
 class ContentServer:
-    def __init__(self, host, port, password, distributor=None):
+    def __init__(self, host, port, password, distributor=None,
+                 shared_secret=None, name=None):
         self.host = host
         self.port = port
         self.password = password
         self.distributor = distributor # acs uses default distributor if None
-        
-        # Contact server to get shared secret for signing
-        # XXX I think this can be gotten just hashing the password?
-        # Is it done this way ask a means of splitting privs?
-        # if so, add name as argument?
-        # see comment @ make_hmac
-        result = self.get_distributor_info()
-        self.shared_secret = result['sharedSecret']
-        self.name = result['name']
+
+        self.shared_secret = shared_secret  # get these lazily if not supplied
+        self.name = name
 
     # xxx is get_loan_link a better name?  other?
     def mint(self, resource,
@@ -367,6 +362,12 @@ class ContentServer:
             not supplied
 
         """
+
+        if self.shared_secret is None or self.name is None:
+            distinfo = self.get_distributor_info()
+            self.shared_secret = distinfo['sharedSecret']
+            self.name = distinfo['name']
+
         if ordersource is None:
             ordersource = self.name
 
@@ -388,7 +389,8 @@ class ContentServer:
         if rights is not None:
             argsobj['rights'] = rights
         urlargs = urllib.urlencode(argsobj)
-        mac = hmac.new(base64.b64decode(shared_secret), urlargs, hashlib.sha1)
+        mac = hmac.new(base64.b64decode(self.shared_secret),
+                       urlargs, hashlib.sha1)
         auth = mac.hexdigest()
         portstr = (':' + str(self.port)) if port is not 80 else ''
 
@@ -612,5 +614,4 @@ class ContentServer:
 
 
 if __name__ == '__main__':
-    # XXX tests go here... see example in WindowedIterator
     raise Exception('not to be called as a __main__')
