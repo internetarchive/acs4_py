@@ -8,8 +8,6 @@ A library for interacting with acs4 xml API.  See example use at bottom.
 
 """
 
-# XXX shared_secret should be sharedSecret?
-# sigh.
 # skip translation layer, and just take input dicts?
 # (iow, skip keyword args!)
 # means even less guidance...
@@ -349,13 +347,13 @@ def o_to_el(o, name):
 ## XXX should make port a kwarg with default 80
 class ContentServer:
     def __init__(self, host, port, password, distributor=None,
-                 shared_secret=None, name=None):
+                 sharedSecret=None, name=None):
         self.host = host
         self.port = port
         self.password = password
         self.distributor = distributor # acs uses default distributor if None
 
-        self.shared_secret = shared_secret  # get these lazily if not supplied
+        self.sharedSecret = sharedSecret  # get these lazily if not supplied
         self.name = name
 
     # mint takes a distributor obj?
@@ -365,7 +363,7 @@ class ContentServer:
     def mint(self, resource,
              action='enterloan', rights=None,
              orderid=None, ordersource=None,
-             shared_secret=None):
+             sharedSecret=None):
         """Create an acs4 download link.
 
         Note that this does not communicate with the server at all,
@@ -395,20 +393,20 @@ class ContentServer:
         ordersource - 'My Store Name', or distributor_info['name'] if
             not supplied
 
-        shared_secret - Use this directly instead of looking up
+        sharedSecret - Use this directly instead of looking up
             distributor.  Ordersource should als be supplied.
         """
 
         # XXX bogus logic
-        if shared_secret is None:
-            if self.shared_secret is None:
+        if sharedSecret is None:
+            if self.sharedSecret is None:
                 distinfo = self.get_distributor_info()
-                shared_secret = distinfo['sharedSecret']
-                self.shared_secret = shared_secret
+                sharedSecret = distinfo['sharedSecret']
+                self.sharedSecret = sharedSecret
                 name = distinfo['name']
                 self.name = name
             else:
-                shared_secret = self.shared_secret
+                sharedSecret = self.sharedSecret
 
         if ordersource is None:
             ordersource = self.name
@@ -431,7 +429,7 @@ class ContentServer:
         if rights is not None:
             argsobj['rights'] = rights
         urlargs = urllib.urlencode(argsobj)
-        mac = hmac.new(base64.b64decode(shared_secret),
+        mac = hmac.new(base64.b64decode(sharedSecret),
                        urlargs, hashlib.sha1)
         auth = mac.hexdigest()
         portstr = (':' + str(self.port)) if self.port is not 80 else ''
@@ -565,7 +563,6 @@ class ContentServer:
                 response.findall('.//' + AdeptNSBracketed + api_el_name)]
 
 
-    # xxx filehandle=None 
     def upload(self,
                filehandle=None, dataPath=None, # one of these is required
                location=None, src=None,
@@ -599,6 +596,10 @@ class ContentServer:
         thumbnailHandle - a filehandle to a thumbnail image
 
         """
+        if filehandle is None and dataPath is None:
+            raise Acs4Exception('upload: please supply filehandle or dataPath')
+        if filehandle is not None and dataPath is not None:
+            raise Acs4Exception('upload: both filehandle and dataPath supplied')
 
         el = etree.Element('package', nsmap={None: AdeptNS})
 

@@ -14,7 +14,7 @@ RSRC=resource_uuid
 python acs4cmd.py $SERVER upload sample.epub --password=$PW
 # ... this returns some JSON, which includes the newly assigned resource ID
 # ... or (for large files)
-python acs4cmd.py $SERVER upload --datapath=/server/path/sample.epub --password=$PW
+python acs4cmd.py $SERVER upload --dataPath=/server/path/sample.epub --password=$PW
 
 # 'distribute' it, as a loanable, returnable book
 python acs4cmd.py $SERVER request DistributionRights create --password=$PW --distributionType=loan --returnable=true --available=1 --permissions=sample_permissions.xml --resource=$RSRC --distributor=$DIST
@@ -45,7 +45,7 @@ Examples:
 
 python acs4.py server mint --distributor='uuid' --resource='uuid'
 python acs4.py server queryresourceitems
-python acs4.py server upload [filename] (or --datapath=/server/path/book.epub)
+python acs4.py server upload [filename] (or --dataPath=/server/path/book.epub)
 python acs4.py server request api request_type
 
         api is: (id is:)
@@ -99,7 +99,7 @@ python acs4.py server request api request_type
 
     group = optparse.OptionGroup(parser, "Upload arguments",
                                  "Arguments specific to 'upload' action")
-    group.add_option('--datapath',
+    group.add_option('--dataPath',
                       action='store',
                       help='server data path to use with upload')
     group.add_option('--metadata',
@@ -173,16 +173,16 @@ python acs4.py server request api request_type
     elif action == 'upload':
         fh = None
         if len(args) == 3:
-            if opts.datapath is not None:
-                parser.error('--datapath (path to remote file)'
+            if opts.dataPath is not None:
+                parser.error('--dataPath (path to remote file)'
                              ' and filename both supplied.')
             fh = open(args[2])
         elif len(args) == 2:
-            if opts.datapath is None:
-                parser.error('please supply filename or --datapath argument')
+            if opts.dataPath is None:
+                parser.error('please supply filename or --dataPath argument')
         else:
             parser.error('Wrong number of args supplied to upload action')
-        result = c.upload(fh, datapath=opts.datapath,
+        result = c.upload(fh, dataPath=opts.dataPath,
                           metadata=opts.metadata,
                           permissions=opts.permissions)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)

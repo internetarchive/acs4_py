@@ -81,5 +81,5 @@ c.request('ResourceItem', 'get', { 'distributor':testdist['distributor'] },
           use_request_args_el=False)
 
 
-# ordersource required if shared_secret used
-c.mint(testbook_info['resource'], ordersource='foo store', shared_secret=testdist['sharedSecret'])
+# ordersource required if sharedSecret used
+c.mint(testbook_info['resource'], ordersource='foo store', sharedSecret=testdist['sharedSecret'])
