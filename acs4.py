@@ -623,17 +623,17 @@ class ContentServer:
             etree.SubElement(el, 'dataPath').text = datapath
 
         if resource is not None:
-            etree.SubElement(el, 'resource'.text = resource
+            etree.SubElement(el, 'resource').text = resource
         if voucher is not None:
-            etree.SubElement(el, 'voucher'.text = voucher
+            etree.SubElement(el, 'voucher').text = voucher
         if resourceItem is not None:
-            etree.SubElement(el, 'resourceItem'.text = resourceItem
+            etree.SubElement(el, 'resourceItem').text = resourceItem
         if fileName is not None:
-            etree.SubElement(el, 'fileName'.text = fileName
+            etree.SubElement(el, 'fileName').text = fileName
         if location is not None:
-            etree.SubElement(el, 'location'.text = location
+            etree.SubElement(el, 'location').text = location
         if src is not None:
-            etree.SubElement(el, 'src'.text = src
+            etree.SubElement(el, 'src').text = src
 
         if thumbnailhandle is not None:
             etree.SubElement(el, 'thumbnailData').text = \
