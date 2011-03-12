@@ -1,9 +1,19 @@
+print 'loaded'
+
+
 """
 Copyright(c)2010 Internet Archive. Software license AGPL version 3.
 
 A library for interacting with acs4 xml API.  See example use at bottom.
 
 """
+
+# XXX shared_secret should be sharedSecret?
+# sigh.
+# skip translation layer, and just take input dicts?
+# (iow, skip keyword args!)
+# means even less guidance...
+# tho if it were easy xlate of monitor output...
 
 import sys
 import re
@@ -77,6 +87,7 @@ def post(request, server, port, api_path):
     """
 
     if debug:
+        print api_path
         print request
     if dry_run:
         return None
@@ -99,6 +110,18 @@ def post(request, server, port, api_path):
     if response.tag == etree.QName(AdeptNS, 'error'):
         raise Acs4Exception(urllib.unquote(response.get('data')))
     return response
+
+
+def make_secret():
+    """ make a random shared secret string suitable for passing to
+    ContentServer().update('Distributor', 'create', { 'sharedSecret': str })
+    """
+
+    ss = uuid.uuid4().urn
+    passhasher = hashlib.sha1()
+    passhasher.update(ss)
+    passhash = passhasher.digest()
+    return base64.b64encode(passhash)
 
 
 def add_limit_el(el, start, count):
@@ -323,7 +346,7 @@ def o_to_el(o, name):
                 etree.SubElement(el, k).text = v
     return el
 
-
+## XXX should make port a kwarg with default 80
 class ContentServer:
     def __init__(self, host, port, password, distributor=None,
                  shared_secret=None, name=None):
@@ -335,10 +358,20 @@ class ContentServer:
         self.shared_secret = shared_secret  # get these lazily if not supplied
         self.name = name
 
+    # mint takes a distributor obj?
     # xxx is get_loan_link a better name?  other?
+    # xxx should error if can't get shared secret somehow.  don't fall
+    # back to null dist.
     def mint(self, resource,
-             action='enterloan', rights=None, orderid=None, ordersource=None):
+             action='enterloan', rights=None,
+             orderid=None, ordersource=None,
+             shared_secret=None):
         """Create an acs4 download link.
+
+        Note that this does not communicate with the server at all,
+        but creates a URL that a browser can then visit, to download a
+        document of specifications for an acs4 reader to download the
+        book.
 
         Arguments:
         resource - the acs4 resource uuid
@@ -353,20 +386,29 @@ class ContentServer:
             rights='$lrt#86400$$prn#2#3600$'  Yep.  Note that this can't
             extend the rights already granted in ACS4.
 
-        orderid - an opaque token, 'orderid' in generated link, notifyurl
-            posts.  Note that this *must* be unique (within the expiration
+        orderid - an opaque token, 'orderid' in generated link,
+            notifyurl posts.  Note that this *must* be
+            (case-insensitively!) unique (within the expiration
             window) or loan fulfillment will fail.  If not supplied, a
             random one will be generated.
 
         ordersource - 'My Store Name', or distributor_info['name'] if
             not supplied
 
+        shared_secret - Use this directly instead of looking up
+            distributor.  Ordersource should als be supplied.
         """
 
-        if self.shared_secret is None or self.name is None:
-            distinfo = self.get_distributor_info()
-            self.shared_secret = distinfo['sharedSecret']
-            self.name = distinfo['name']
+        # XXX bogus logic
+        if shared_secret is None:
+            if self.shared_secret is None:
+                distinfo = self.get_distributor_info()
+                shared_secret = distinfo['sharedSecret']
+                self.shared_secret = shared_secret
+                name = distinfo['name']
+                self.name = name
+            else:
+                shared_secret = self.shared_secret
 
         if ordersource is None:
             ordersource = self.name
@@ -389,10 +431,10 @@ class ContentServer:
         if rights is not None:
             argsobj['rights'] = rights
         urlargs = urllib.urlencode(argsobj)
-        mac = hmac.new(base64.b64decode(self.shared_secret),
+        mac = hmac.new(base64.b64decode(shared_secret),
                        urlargs, hashlib.sha1)
         auth = mac.hexdigest()
-        portstr = (':' + str(self.port)) if port is not 80 else ''
+        portstr = (':' + str(self.port)) if self.port is not 80 else ''
 
         # replace with string format?
         # construct with urlparse.unsplit()
@@ -400,8 +442,10 @@ class ContentServer:
                 + urlargs + '&auth=' + auth)
 
 
-    def request(self, api, action, request_args,
-                start=0, count=0, permissions=None):
+    def request(self, api, action,
+                request_args={}, use_request_args_el=None,
+                start=0, count=0, permissions=None,
+                resource=None):
         """Make a xml-mediated DB request to the ACS4 server.
 
         api - one of: (unique id required to e.g. get a single instance)
@@ -416,11 +460,17 @@ class ContentServer:
 
         action - 'get count create delete update'
 
+        Keyword arguments:
+
         request_args - a dict of elements to be added as children of the
             'api element' (e.g. distributionRights).  Note *all* must be
             supplied for 'update' action, or the remainder will be nulled.
 
-        Keyword arguments:
+        use_request_args_el - When true, elements generated for keys
+            in request_args are added to a new 'args element', with a
+            name derived from the api name.  If false, these elements
+            are added to the toplevel element.  If None, guess the
+            appropriate default.
 
         permissions - This should be xml describing the item permissions,
             if any.  The best way to get this is to configure a sample
@@ -431,6 +481,18 @@ class ContentServer:
         USE WITH CARE, this API can break your acs4 install!
 
         """
+        # if use_request_args_el is None:
+        #     if action is 'get':
+        #         use_request_args_el = False
+        #     else:
+        #         use_request_args_el = True
+        # if use_request_args_el is None:
+        #     if api is 'ResourceItem':
+        #         use_request_args_el = False
+        #     else:
+        #         use_request_args_el = True
+        use_request_args_el = True
+
         el = etree.Element('request',
                            { 'action': action, 'auth': 'builtin' },
                            nsmap={None: AdeptNS})
@@ -438,19 +500,24 @@ class ContentServer:
         # XXX NOTE new 'replace' action supported in 4.1 server...
         # syntax is possibly <action>replace</action> - not action='replace'!
 
-        api_el_name = api[0].lower() + api[1:]
-
         add_limit_el(el, start, count)
 
+        api_el_name = api[0].lower() + api[1:]
         # Several requests require a subelement name that's different from
         # the API; these are special-cased here.  It's not clear if
         # there's any system to them.
+        print api_el_name
+
         if api_el_name == 'resourceItem':
             api_el_name += 'Info'
-        if api_el_name in ('distributor', 'license'
+        if api_el_name in ('distributor', 'license',
                            'fulfillment', 'fulfillmentItem'):
             api_el_name += 'Data'
-        api_el = etree.SubElement(el, api_el_name)
+        print api_el_name
+        if use_request_args_el is True:
+            api_el = etree.SubElement(el, api_el_name)
+        else:
+            api_el = el
 
         for key in request_args.keys():
             v = request_args[key]
@@ -460,25 +527,33 @@ class ContentServer:
                     # isn't supplied
                     if permissions is None:
                         if isinstance(v, dict):
-                            perms_el = o_to_el(v, 'permissions')
+                            perms_el = o_to_el(v, key)
                         else:
-                            perms_el = read_xml(v, 'permissions')
+                            perms_el = read_xml(v, key)
                         api_el.append(perms_el)
                 elif key == 'metadata':
                     if isinstance(v, dict):
                         meta_el = o_to_meta_el(v)
                     else:
-                        meta_el = read_xml(v, 'metadata')
+                        meta_el = read_xml(v, key)
                     api_el.append(meta_el)
                 else:
-                    # TODO: handle sub-dicts.  Are they ever needed?
-                    if not isinstance(v, basestring):
-                        v = str(v)
-                    etree.SubElement(api_el, key).text = v
+                    if isinstance(v, dict):
+                        sub_el = o_to_el(v, key)
+                        api_el.append(sub_el)
+                    else:
+                        if not isinstance(v, basestring):
+                            v = str(v)
+                        etree.SubElement(api_el, key).text = v
 
+        if resource is not None:
+            resource_el = etree.SubElement(el, 'resource')
+            resource_el.text = resource
+            el.append(resource_el)
         if permissions is not None:
             perms_el = read_xml(permissions, 'permissions')
             api_el.append(perms_el)
+
         signed_request = add_hmac_envelope(el, self.password)
         response = post(signed_request, self.host, self.port,
                         '/admin/Manage' + api[0].upper() + api[1:])
@@ -489,17 +564,26 @@ class ContentServer:
         return [el_to_o(info_el) for info_el in
                 response.findall('.//' + AdeptNSBracketed + api_el_name)]
 
-    def upload(self, filehandle,
-               datapath=None, metadata=None, permissions=None,
-               thumbnailhandle=None):
+
+    # xxx filehandle=None 
+    def upload(self,
+               filehandle=None, dataPath=None, # one of these is required
+               location=None, src=None,
+               metadata=None, permissions=None,
+               thumbnailHandle=None):
         """Upload a file to ACS4.
 
-        Arguments:
-        filehandle
-
         Keyword arguments:
+        filehandle - Handle to file to be packaged.
+
         datapath - Path ON SERVER to file to be packaged.  When this is
             supplied, filehandle should be None.
+
+        location - Path ON SERVER (or ftp url) where encrypted results
+            should be placed.
+
+        src - HTTP url that ACS4 will say the resource can be
+            downloaded from.
 
         permissions - This should be xml describing the item
             permissions, if any.  The best way to get this is to
@@ -510,9 +594,9 @@ class ContentServer:
 
         metadata - Similar to permissions.  A flat name : value dict
             is also accepted.  ACS4 will fill in missing values from
-            the media.
+            the media.  Metadata fields should be less than 128 chars.
 
-        thumbnailhandle - a filehandle to a thumbnail image
+        thumbnailHandle - a filehandle to a thumbnail image
 
         """
 
@@ -524,9 +608,9 @@ class ContentServer:
         else:
             etree.SubElement(el, 'dataPath').text = datapath
 
-        if thumbnailhandle is not None:
+        if thumbnailHandle is not None:
             etree.SubElement(el, 'thumbnailData').text = \
-                base64.encodestring(thumbnailhandle.read())
+                base64.encodestring(thumbnailHandle.read())
 
         if permissions is not None:
             if isinstance(permissions, dict):
@@ -549,10 +633,14 @@ class ContentServer:
         return el_to_o(response)
 
 
-    def queryresourceitems(self, start=0, count=10, distributor=None):
+    # XXX just add an object request_args to this?
+    def queryresourceitems(self, start=0, count=10, distributor=None,
+                           sharedSecret=None):
         el = etree.Element('request', nsmap={None: AdeptNS})
         if distributor is not None:
             etree.SubElement(el, 'distributor').text = distributor;
+        if sharedSecret is not None:
+            etree.SubElement(el, 'sharedSecret').text = sharedSecret;
         add_limit_el(el, start, count)
         etree.SubElement(el, 'QueryResourceItems')
         signed_request = add_hmac_envelope(el, self.password)
@@ -567,10 +655,14 @@ class ContentServer:
     # XXX abstract with decorator?
     def get_distributor_info(self, distributor=None):
         if distributor is None:
-            distributor = self.distributor
+            distributor = self.distributor # might also be None
         request_args = { 'distributor': distributor }
         reply = self.request('Distributor', 'get', request_args)
+        # this could return list!  Is that an impedance mismatch?
         return reply[0]
+
+    def get_distributors(self):
+        return self.request('Distributor', 'get')
 
     def get_resourcekey_info(self, resource):
         """ Get a dict of information describing a resource.
