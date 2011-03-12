@@ -565,9 +565,11 @@ class ContentServer:
 
     def upload(self,
                filehandle=None, dataPath=None, # one of these is required
+               resource=None, voucher=None,
+               resourceItem=None, fileName=None,
                location=None, src=None,
                metadata=None, permissions=None,
-               thumbnailHandle=None):
+               thumbnailhandle=None, thumbnailLocation=None):
         """Upload a file to ACS4.
 
         Keyword arguments:
@@ -575,6 +577,14 @@ class ContentServer:
 
         datapath - Path ON SERVER to file to be packaged.  When this is
             supplied, filehandle should be None.
+
+        resource - Resource id.  (for replace - NYI.)
+
+        voucher - Voucher ID for GBLink.
+
+        resourceItem - Resource item index (for multi-part items.)
+
+        fileName - File name to use for packaged resource
 
         location - Path ON SERVER (or ftp url) where encrypted results
             should be placed.
@@ -593,11 +603,14 @@ class ContentServer:
             is also accepted.  ACS4 will fill in missing values from
             the media.  Metadata fields should be less than 128 chars.
 
-        thumbnailHandle - a filehandle to a thumbnail image
+        thumbnailhandle - a filehandle to a thumbnail image
+
+        thumbnailLocation - Path on server (or ftp url) where
+            thumbnail will be placed
 
         """
         if filehandle is None and dataPath is None:
-            raise Acs4Exception('upload: please supply filehandle or dataPath')
+            raise Acs4Exception('upload: please supply fileHandle or dataPath')
         if filehandle is not None and dataPath is not None:
             raise Acs4Exception('upload: both filehandle and dataPath supplied')
 
@@ -609,9 +622,25 @@ class ContentServer:
         else:
             etree.SubElement(el, 'dataPath').text = datapath
 
-        if thumbnailHandle is not None:
+        if resource is not None:
+            etree.SubElement(el, 'resource'.text = resource
+        if voucher is not None:
+            etree.SubElement(el, 'voucher'.text = voucher
+        if resourceItem is not None:
+            etree.SubElement(el, 'resourceItem'.text = resourceItem
+        if fileName is not None:
+            etree.SubElement(el, 'fileName'.text = fileName
+        if location is not None:
+            etree.SubElement(el, 'location'.text = location
+        if src is not None:
+            etree.SubElement(el, 'src'.text = src
+
+        if thumbnailhandle is not None:
             etree.SubElement(el, 'thumbnailData').text = \
-                base64.encodestring(thumbnailHandle.read())
+                base64.encodestring(thumbnailhandle.read())
+
+        if thumbnailLocation is not None:
+            etree.SubElement(el, 'thumbnailLocation').text = thumbnailLocation
 
         if permissions is not None:
             if isinstance(permissions, dict):
