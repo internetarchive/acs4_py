@@ -1,6 +1,3 @@
-print 'loaded'
-
-
 """
 Copyright(c)2010 Internet Archive. Software license AGPL version 3.
 
@@ -504,14 +501,14 @@ class ContentServer:
         # Several requests require a subelement name that's different from
         # the API; these are special-cased here.  It's not clear if
         # there's any system to them.
-        print api_el_name
+        # print api_el_name
 
         if api_el_name == 'resourceItem':
             api_el_name += 'Info'
         if api_el_name in ('distributor', 'license',
                            'fulfillment', 'fulfillmentItem'):
             api_el_name += 'Data'
-        print api_el_name
+        # print api_el_name
         if use_request_args_el is True:
             api_el = etree.SubElement(el, api_el_name)
         else:
@@ -575,7 +572,7 @@ class ContentServer:
         Keyword arguments:
         filehandle - Handle to file to be packaged.
 
-        datapath - Path ON SERVER to file to be packaged.  When this is
+        dataPath - Path ON SERVER to file to be packaged.  When this is
             supplied, filehandle should be None.
 
         resource - Resource id.  (for replace - NYI.)
@@ -620,7 +617,7 @@ class ContentServer:
             etree.SubElement(el, 'data').text = \
                 base64.encodestring(filehandle.read())
         else:
-            etree.SubElement(el, 'dataPath').text = datapath
+            etree.SubElement(el, 'dataPath').text = dataPath
 
         if resource is not None:
             etree.SubElement(el, 'resource').text = resource
