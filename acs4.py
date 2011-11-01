@@ -679,7 +679,25 @@ class ContentServer:
                 response.findall('.//' + AdeptNSBracketed + 'resourceItemInfo')]
 
     # below are 'derived actions - shortcuts'
+    # XXX add 'limit' arg here?
+    def get_resourceitem_iterator(self, start=0,
+                                  step=1000,
+                                  distributor=None,
+                                  sharedSecret=None):
+        i = start
+        while True:
+            queried = self.queryresourceitems(start=i, count=step,
+                                              distributor=distributor,
+                                              sharedSecret=sharedSecret)
+            if len(queried) is 0:
+                break
+            for q in queried:
+                yield q
+            i += len(queried)
+
+
     # XXX abstract with decorator?
+
     def get_distributor_info(self, distributor=None):
         if distributor is None:
             distributor = self.distributor # might also be None
