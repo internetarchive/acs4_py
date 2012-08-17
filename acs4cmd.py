@@ -23,10 +23,10 @@ def main(argv):
                       epilog="""
 Examples:
 
-python acs4.py server mint --distributor='uuid' --resource='uuid'
-python acs4.py server queryresourceitems
-python acs4.py server upload [filename] (or --datapath=/server/path/book.epub)
-python acs4.py server request api request_type
+python acs4cmd.py server mint --distributor='uuid' --resource='uuid'
+python acs4cmd.py server queryresourceitems
+python acs4cmd.py server upload [filename] (or --datapath=/server/path/book.epub)
+python acs4cmd.py server request api request_type
 
         api is: (id is:)
                 DistributionRights      (distributor + resource)
