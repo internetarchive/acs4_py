@@ -30,6 +30,7 @@ urls = (
   '/fulfillment_info/?(.*)', 'fulfillment_info',
   '/resource_info_by_id/?(.*)', 'resource_info_by_id', # must precede below
   '/resource_info/?(.*)', 'resource_info',
+  '/transaction_info/?(.*)', 'transaction_info',
 )
 
 app = web.application(urls, globals())
@@ -312,6 +313,19 @@ class acs4db():
         
         return resources
 
+    def get_transaction_info(self, transid):
+	sql = ("SELECT ri.identifier, fi.resourceid, f.transid, f.returned, f.loanuntil"  +
+	       " FROM fulfillmentitem fi, fulfillment f, resourceitem ri" + 
+	       " WHERE ri.resourceid=fi.resourceid and fi.fulfillmentid=f.fulfillmentid and f.transid=%s")
+
+	self.connect()
+        c = self.conn.cursor()
+        c.execute(sql, (transid, ))
+	row = self._fetchone_dict(c)
+	if row:
+	  row['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=row['resourceid']))
+	  row['loanuntil'] = row['loanuntil'].isoformat()
+        return row
 
 class is_loaned_out:
     def GET(self, resource):
@@ -336,6 +350,12 @@ class resource_info_by_id:
         web.header("Content-Type", 'text/plain')
         db = acs4db()
         return json.dumps(db.get_resource_info_by_id(identifier), sort_keys=True, indent=4)
+
+class transaction_info:
+    def GET(self, transid):
+        web.header("Content-Type", 'text/plain')
+        db = acs4db()
+        return json.dumps(db.get_transaction_info(transid), sort_keys=True, indent=4)
 
 if __name__ == "__main__":
     app.run()
