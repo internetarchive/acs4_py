@@ -195,7 +195,7 @@ class acs4db():
         self.connect()
         c = self.conn.cursor()
         sql = """
-            SELECT DISTINCT resourceid, returned, until, loanuntil, transid FROM fulfillmentitem, fulfillment
+            SELECT DISTINCT resourceid, returned, until, loanuntil, transtime, transid FROM fulfillmentitem, fulfillment
                 WHERE fulfillmentitem.fulfillmentid = fulfillment.fulfillmentid
                     AND (
                             (
@@ -218,6 +218,7 @@ class acs4db():
         while r != None:
             r_dict = {}
             r_dict['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=r[0]))
+            r_dict['transtime'] = r[-2].isoformat()
             r_dict['transid'] = r[-1]
             r_dict['returned'] = r[1]
             if r[2]:
@@ -316,7 +317,7 @@ class acs4db():
         return resources
 
     def get_transaction_info(self, transid):
-	sql = ("SELECT ri.identifier, fi.resourceid, f.transid, f.returned, f.loanuntil"  +
+	sql = ("SELECT ri.identifier, fi.resourceid, f.transid, f.returned, f.transtime, f.loanuntil"  +
 	       " FROM fulfillmentitem fi, fulfillment f, resourceitem ri" + 
 	       " WHERE ri.resourceid=fi.resourceid and fi.fulfillmentid=f.fulfillmentid and f.transid=%s")
 
@@ -327,6 +328,7 @@ class acs4db():
 	if row:
 	  row['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=row['resourceid']))
 	  row['loanuntil'] = row['loanuntil'].isoformat()
+	  row['transtime'] = row['transtime'].isoformat()
         return row
 
 class is_loaned_out:
