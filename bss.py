@@ -31,6 +31,7 @@ urls = (
   '/resource_info_by_id/?(.*)', 'resource_info_by_id', # must precede below
   '/resource_info/?(.*)', 'resource_info',
   '/transaction_info/?(.*)', 'transaction_info',
+  '/item/(.*)', 'item',
 )
 
 app = web.application(urls, globals())
@@ -357,6 +358,23 @@ class transaction_info:
         web.header("Content-Type", 'text/plain')
         db = acs4db()
         return json.dumps(db.get_transaction_info(transid), sort_keys=True, indent=4)
+
+class item:
+    def GET(self, identifier):
+        web.header("Content-Type", 'text/plain')
+	db = acs4db()
+	d = {
+	  "identifier": identifier,
+	  "resources": [self.process_resource(db, x) for x in db.get_resource_info_by_id(identifier)]
+	}
+	return json.dumps(d, sort_keys=True, indent=4)
+
+    def process_resource(self, db, resource):
+	d = {}
+	for k in ['resourceid', 'src', 'format']:
+	  d[k] = resource[k]
+	d['loans'] = db.get_loaned_out(d['resourceid'])
+	return d
 
 if __name__ == "__main__":
     app.run()
