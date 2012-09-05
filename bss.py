@@ -194,7 +194,7 @@ class acs4db():
         self.connect()
         c = self.conn.cursor()
         sql = """
-            SELECT DISTINCT resourceid, returned, until, loanuntil FROM fulfillmentitem, fulfillment
+            SELECT DISTINCT resourceid, returned, until, loanuntil, transid FROM fulfillmentitem, fulfillment
                 WHERE fulfillmentitem.fulfillmentid = fulfillment.fulfillmentid
                     AND (
                             (
@@ -217,6 +217,7 @@ class acs4db():
         while r != None:
             r_dict = {}
             r_dict['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=r[0]))
+            r_dict['transid'] = r[-1]
             r_dict['returned'] = r[1]
             if r[2]:
                 r_dict['until'] = r[2].isoformat()
