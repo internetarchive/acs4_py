@@ -5,6 +5,7 @@ Entry points - call from command line, or see:
 queryresourceitems, upload, request and mint.
 
 """
+from __future__ import print_function
 
 import sys
 import re
@@ -298,7 +299,7 @@ def post(xml, server, port, password, api_path):
                              pretty_print=True,
                              encoding='utf-8')
     if debug:
-        print request
+        print(request)
     if dry_run:
         return None
 
@@ -314,7 +315,7 @@ def post(xml, server, port, password, api_path):
     conn.close()
 
     if debug:
-        print response_str
+        print(response_str)
 
     if response.tag == etree.QName(AdeptNS, 'error'):
         raise Acs4Exception(urllib.unquote(response.get('data')))
@@ -412,7 +413,7 @@ def make_hmac(password, el):
     if show_serialization:
         logger = debug_consumer()
         serialize_el(el, logger)
-        print logger.dump()
+        print(logger.dump())
 
     serialize_el(el, mac)
 
@@ -453,8 +454,7 @@ def serialize_el(el, consumer):
     # then by their names; sorting is done bytewise on UTF-8
     # representations."
 
-    keys = el.attrib.keys()
-    keys.sort()
+    keys = sorted(el.attrib.keys())
     for attname in keys:
         consumer.update(ATTRIBUTE)
         consume_str("") # TODO element namespace
