@@ -136,7 +136,7 @@ class acs4db():
                     user=user,
                     passwd=passwd,
                     )
-            except MySQLdb.OperationalError, e:
+            except MySQLdb.OperationalError as e:
                 if try_count > max_tries:
                     raise e
         self.conn.set_character_set('utf8')

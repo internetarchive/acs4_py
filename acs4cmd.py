@@ -5,6 +5,7 @@ Entry points - call from command line, or see:
 queryresourceitems, upload, request and mint.
 
 """
+from __future__ import print_function
 
 import sys
 import optparse
@@ -146,7 +147,7 @@ python acs4cmd.py server request api request_type
                                          distributor=opts.distributor,
                                          port=opts.port)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)
-        print
+        print()
 
     elif action == 'upload':
         fh = None
@@ -166,7 +167,7 @@ python acs4cmd.py server request api request_type
                              metadata=opts.metadata,
                              port=opts.port)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)
-        print
+        print()
 
     elif action == 'request':
         request_types = ['get', 'count', 'create', 'delete', 'update']
@@ -202,7 +203,7 @@ python acs4cmd.py server request api request_type
                               permissions=opts.permissions,
                               port=opts.port)
         json.dump(result, sys.stdout, indent=4, sort_keys=True)
-        print
+        print()
 
     elif action == 'mint':
 
@@ -218,8 +219,8 @@ python acs4cmd.py server request api request_type
                                              port=opts.port)
         secret = distinfo['sharedSecret']
         name = distinfo['name']
-        print acs4.mint(server, secret, opts.resource, 'enterloan', name,
-                        port=opts.port)
+        print(acs4.mint(server, secret, opts.resource, 'enterloan', name,
+                        port=opts.port))
     parser.destroy()
 
 
