@@ -1,20 +1,19 @@
 #!/usr/bin/env python
 
-#import cgitb; cgitb.enable()
-import sys
-
-import web
 import json
-
-import warnings
-warnings.filterwarnings("ignore", message="the sets module is deprecated")
-import MySQLdb
-
+import sys
 import uuid
+import warnings
+
+# import cgitb; cgitb.enable()
+import MySQLdb
+import web
+
+warnings.filterwarnings("ignore", message="the sets module is deprecated")
 
 
 #def cgidebugerror():
-#    """                                                                         
+#    """
 #    """
 #    _wrappedstdout = sys.stdout
 #    sys.stdout = web._oldstdout
@@ -22,7 +21,6 @@ import uuid
 #    sys.stdout = _wrappedstdout
 #
 #web.internalerror = cgidebugerror
-
 
 
 urls = (
@@ -36,7 +34,7 @@ urls = (
 
 app = web.application(urls, globals())
 
-dbschema = """ 
+dbschema = """
 
 mysql> show databases;
 +--------------------+
@@ -147,9 +145,9 @@ class acs4db():
 
     def get_fulfillment_info(self, resource=None):
         """ returns a list of resources in the fulfilment table , values set to dict of handy facts """
-        
-        resources = [] 
-        
+
+        resources = []
+
         if resource == '':
             resource = None
 
@@ -187,8 +185,8 @@ class acs4db():
 
     def get_loaned_out(self, resource=None):
         """ returns a list of unloanable books (someone else has 'em) according to acs"""
-        resources = [] 
-        
+        resources = []
+
         if resource == '':
             resource = None
 
@@ -201,9 +199,9 @@ class acs4db():
                             (
                                 (loanuntil IS NULL OR until IS NULL)
                                 OR
-                                (loanuntil > NOW()) 
+                                (loanuntil > NOW())
                             )
-                            AND 
+                            AND
                             ( returned IS NULL OR returned = 'F')
                         )
         """
@@ -272,7 +270,7 @@ class acs4db():
             #sys.stderr.write(r['resourceid'] + "\n")
             #json.dumps(r)
             r = self._fetchone_dict(c)
-            
+
 
         return resources
 
@@ -313,22 +311,22 @@ class acs4db():
             r['loanstatus'] = loanstatus
             resources.append(r)
             r = self._fetchone_dict(c)
-        
+
         return resources
 
     def get_transaction_info(self, transid):
-	sql = ("SELECT ri.identifier, fi.resourceid, f.transid, f.returned, f.transtime, f.loanuntil"  +
-	       " FROM fulfillmentitem fi, fulfillment f, resourceitem ri" + 
-	       " WHERE ri.resourceid=fi.resourceid and fi.fulfillmentid=f.fulfillmentid and f.transid=%s")
+        sql = ("SELECT ri.identifier, fi.resourceid, f.transid, f.returned, f.transtime, f.loanuntil"  +
+               " FROM fulfillmentitem fi, fulfillment f, resourceitem ri" +
+               " WHERE ri.resourceid=fi.resourceid and fi.fulfillmentid=f.fulfillmentid and f.transid=%s")
 
-	self.connect()
+        self.connect()
         c = self.conn.cursor()
         c.execute(sql, (transid, ))
-	row = self._fetchone_dict(c)
-	if row:
-	  row['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=row['resourceid']))
-	  row['loanuntil'] = row['loanuntil'].isoformat()
-	  row['transtime'] = row['transtime'].isoformat()
+        row = self._fetchone_dict(c)
+        if row:
+            row['resourceid'] = 'urn:uuid:' + str(uuid.UUID(bytes=row['resourceid']))
+            row['loanuntil'] = row['loanuntil'].isoformat()
+            row['transtime'] = row['transtime'].isoformat()
         return row
 
 class is_loaned_out:
@@ -364,20 +362,19 @@ class transaction_info:
 class item:
     def GET(self, identifier):
         web.header("Content-Type", 'text/plain')
-	db = acs4db()
-	d = {
-	  "identifier": identifier,
-	  "resources": [self.process_resource(db, x) for x in db.get_resource_info_by_id(identifier)]
-	}
-	return json.dumps(d, sort_keys=True, indent=4)
+        db = acs4db()
+        d = {
+          "identifier": identifier,
+          "resources": [self.process_resource(db, x) for x in db.get_resource_info_by_id(identifier)]
+        }
+        return json.dumps(d, sort_keys=True, indent=4)
 
     def process_resource(self, db, resource):
-	d = {}
-	for k in ['resourceid', 'src', 'format']:
-	  d[k] = resource[k]
-	d['loans'] = db.get_loaned_out(d['resourceid'])
-	return d
+        d = {}
+        for k in ['resourceid', 'src', 'format']:
+            d[k] = resource[k]
+        d['loans'] = db.get_loaned_out(d['resourceid'])
+        return d
 
 if __name__ == "__main__":
     app.run()
-
