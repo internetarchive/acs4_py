@@ -190,7 +190,7 @@ def request(server, api, action, request_args, password,
                     api_el.append(perms_el)
             elif key == 'metadata':
                 if isinstance(v, dict):
-                    meta_el = o_to_meta_xml(v)
+                    meta_el = o_to_meta_el(v)
                 else:
                     meta_el = read_xml(v, 'metadata')
                 api_el.append(meta_el)
@@ -592,7 +592,7 @@ def o_to_meta_el(o):
 
 def o_to_el(o, name):
     if name == 'metadata':
-        return o_to_meta_xml(o)
+        return o_to_meta_el(o)
     el = etree.Element(name)
     for k, v in o.iteritems():
         if isinstance(v, dict):
