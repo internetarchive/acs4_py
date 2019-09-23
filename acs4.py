@@ -7,21 +7,34 @@ queryresourceitems, upload, request and mint.
 """
 from __future__ import print_function
 
-import sys
-import re
-import os
-import math
-import httplib
-import urllib
-from lxml import etree
-from StringIO import StringIO
 import base64
-import hmac
-import hashlib
-import random
-import time
 import datetime
+import hashlib
+import hmac
+import math
+import os
+import random
+import re
+import sys
+import time
+import urllib
 import uuid
+
+from lxml import etree
+
+try:  # Python 3
+    import http.client as httplib
+    from io import StringIO
+except ImportError:  # Python 2
+    from StringIO import StringIO
+    import httplib
+
+try:
+    basestring
+    unicode
+except NameError:
+    basestring = str
+    unicode = str
 
 AdeptNS = 'http://ns.adobe.com/adept'
 AdeptNSBracketed = '{' + AdeptNS + '}'
@@ -98,7 +111,7 @@ def mint(server, secret, resource, action, ordersource, rights=None, orderid=Non
     urlargs = urllib.urlencode(argsobj)
     mac = hmac.new(base64.b64decode(secret), urlargs, hashlib.sha1)
     auth = mac.hexdigest()
-    portstr = (':' + str(port)) if port is not 80 else ''
+    portstr = '' if port == 80 else ':{}'.format(port)
 
     # replace with string format?
     # construct with urlparse.unsplit()
@@ -177,7 +190,7 @@ def request(server, api, action, request_args, password,
                     api_el.append(perms_el)
             elif key == 'metadata':
                 if isinstance(v, dict):
-                    meta_el = o_to_meta_xml(v)
+                    meta_el = o_to_meta_el(v)
                 else:
                     meta_el = read_xml(v, 'metadata')
                 api_el.append(meta_el)
@@ -579,7 +592,7 @@ def o_to_meta_el(o):
 
 def o_to_el(o, name):
     if name == 'metadata':
-        return o_to_meta_xml(o)
+        return o_to_meta_el(o)
     el = etree.Element(name)
     for k, v in o.iteritems():
         if isinstance(v, dict):
